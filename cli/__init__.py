@@ -12,5 +12,3 @@ cli.add_command(commands.sp)
 
 # noinspection PyTypeChecker
 cli.add_command(commands.info)
-
-cli(max_content_width=180)

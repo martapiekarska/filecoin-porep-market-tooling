@@ -103,21 +103,17 @@ def json_pretty(json_data):
     return json.dumps(_json_pretty(json_data), indent=4)
 
 
-def to_tokens(amount: int, decimals: int):
-    result = amount * (10 ** decimals)
-    if int(result) != result:
-        raise ValueError(f"Precision lost converting to tokens: {amount}e{decimals} = {result}")
-
-    return int(result)
+def to_tokens(amount: int, decimals: int) -> float:
+    return amount / (10 ** decimals)
 
 
 def from_tokens(amount: int, decimals: int):
     return amount * (10 ** decimals)
 
 
-def int_to_bytes(x: int) -> bytes:
+def int_to_bytes(x: int, size: int = 32) -> bytes:
     if x < 0: raise ValueError("Cannot convert negative integer to bytes")
-    return x.to_bytes((x.bit_length() + 7) // 8, 'big')
+    return x.to_bytes(size, 'big')
 
 
 def int_from_bytes(xbytes: bytes) -> int:
