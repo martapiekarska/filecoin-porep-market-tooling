@@ -24,7 +24,7 @@ def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
             sp_utils.reject_deal_id(deal.deal_id, from_private_key)
 
         elif _answer in ['skip', 's']:
-             continue
+            continue
 
         else:
             raise ValueError(f"Invalid answer: {_answer}")

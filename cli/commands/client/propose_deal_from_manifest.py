@@ -1,9 +1,6 @@
-import json
-
 import requests
 import click
 
-from urllib.error import URLError, HTTPError
 from web3.auto import w3
 from cli.commands.client._client import client_private_key
 from cli.services.contracts.porep_market import PoRepMarketDealRequest, PoRepMarketDealTerms, PoRepMarket, PoRepMarketDealState
@@ -11,19 +8,15 @@ from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
 from cli import utils
 from cli.commands.client import _utils as client_utils
 
+
 def _fetch_manifest(manifest_url: str) -> dict:
     try:
         manifest = requests.get(manifest_url).json()
         click.echo(f'Manifest downloaded from {manifest_url}')
         return manifest
-    except HTTPError as e:
-        raise Exception(f"HTTP error fetching manifest URL: {e.code} {e.reason}")
-    except URLError as e:
-        raise Exception(f"Network error fetching manifest URL: {e.reason}")
-    except json.JSONDecodeError as e:
-        raise Exception(f"Response was not valid JSON: {e}")
     except Exception as e:
         raise Exception(f"Error fetching manifest: {e}")
+
 
 # TODO retry, state, check if already proposed
 def _propose_deal_from_manifest(manifest_url: str,
@@ -56,7 +49,7 @@ def _propose_deal_from_manifest(manifest_url: str,
 
     if utils.ask_user_confirm(f"Print manifest?", default_answer=False):
         _manifest = utils.json_pretty(manifest)
-        click.echo_via_pager('\n'.join([f"{i+1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
+        click.echo_via_pager('\n'.join([f"{i + 1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
 
     deal = PoRepMarketDealRequest(
         requirements=SPRegistrySLIThresholds(

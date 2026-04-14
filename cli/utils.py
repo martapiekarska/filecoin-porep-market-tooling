@@ -104,7 +104,11 @@ def json_pretty(json_data):
 
 
 def to_tokens(amount: int, decimals: int):
-    return int(amount / (10 ** decimals))
+    result = amount * (10 ** decimals)
+    if int(result) != result:
+        raise ValueError(f"Precision lost converting to tokens: {amount}e{decimals} = {result}")
+
+    return int(result)
 
 
 def from_tokens(amount: int, decimals: int):

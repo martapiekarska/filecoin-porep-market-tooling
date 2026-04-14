@@ -13,7 +13,7 @@ cp .env.example .env
 
 ## Running the CLI
 Make sure you have the required environment variables (see `.env`). \
-Run the script: `python3 ./porep_market_tooling.py` and follow help prompts.
+Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
 
 ## Important notes

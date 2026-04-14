@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# This file is supposed to be python 2 compatible
+
 # noinspection PyUnresolvedReferences
 import __future__
 import sys
