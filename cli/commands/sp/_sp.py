@@ -17,6 +17,7 @@ def sp(address: Address = None, private_key: str = None, debug: bool = False):
     """
     Storage Provider commands for interacting with the PoRep Market.
     """
+
     global SP_PRIVATE_KEY
     SP_PRIVATE_KEY = private_key
 
@@ -50,4 +51,5 @@ def info():
     """
     Display the current SP info.
     """
+
     _info()

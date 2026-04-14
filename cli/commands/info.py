@@ -8,4 +8,5 @@ def info():
     """
     Display the current info.
     """
+
     commands_utils.print_info()

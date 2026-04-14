@@ -22,6 +22,7 @@ def init_accepted_deals():
     2. deposit FileCoin pay funds and approving operator,
     3. initialize FileCoinPay rail.
     """
+
     _init_accepted_deals(client_private_key())
 
 

@@ -17,6 +17,7 @@ def client(address: Address = None, private_key: str = None, debug: bool = False
     """
     Client commands for interacting with the PoRep Market.
     """
+
     global CLIENT_PRIVATE_KEY
     CLIENT_PRIVATE_KEY = private_key
 
@@ -50,4 +51,5 @@ def info():
     """
     Display the current client info.
     """
+
     _info()

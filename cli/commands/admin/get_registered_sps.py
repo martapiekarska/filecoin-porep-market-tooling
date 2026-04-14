@@ -13,4 +13,5 @@ def get_registered_sps():
     """
     Get registered SPs from the SPRegistry smart contract.
     """
+
     click.echo(utils.json_pretty(_get_registered_sps()))

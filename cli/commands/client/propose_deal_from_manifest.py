@@ -30,24 +30,24 @@ def _propose_deal_from_manifest(manifest_url: str,
     manifest = _fetch_manifest(manifest_url)
 
     if len(manifest) != 1:
-        raise Exception(f'Invalid manifest')
+        raise Exception('Invalid manifest')
 
     if 'pieces' not in manifest[0] or not len(manifest[0]['pieces']):
-        raise Exception(f'Invalid manifest pieces')
+        raise Exception('Invalid manifest pieces')
 
     # TODO verify this
     data_pieces = [piece for piece in manifest[0]['pieces'] if piece['pieceType'] == 'data']
     data_pieces_size = sum(piece['pieceSize'] for piece in data_pieces)
 
     if not all(piece['preparationId'] == data_pieces[0]['preparationId'] for piece in data_pieces):
-        raise Exception(f'Invalid preparationId in manifest pieces')
+        raise Exception('Invalid preparationId in manifest pieces')
 
     if not data_pieces_size:
         raise Exception(f'Invalid deal size: {data_pieces_size}')
 
     click.echo(f"Found {len(data_pieces)} data pieces with size {data_pieces_size} bytes and {len(manifest[0]['pieces']) - len(data_pieces)} other pieces")
 
-    if utils.ask_user_confirm(f"Print manifest?", default_answer=False):
+    if utils.ask_user_confirm("Show manifest?", default_answer=False):
         _manifest = utils.json_pretty(manifest)
         click.echo_via_pager('\n'.join([f"{i + 1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
 
@@ -102,6 +102,7 @@ def propose_deal_from_manifest(manifest_url: str,
 
     MANIFEST_URL - URL of the deal manifest file to download.
     """
+
     _propose_deal_from_manifest(manifest_url,
                                 retrievability_bps,
                                 bandwidth_mbps,
@@ -119,6 +120,7 @@ def propose_deal_from_manifest_mocked(manifest_url: str):
     """
     Testing and development purposes.
     """
+
     retrievability_bps = 10
     bandwidth_mbps = 1
     price_per_sector_per_month = 1000

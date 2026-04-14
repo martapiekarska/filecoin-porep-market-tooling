@@ -96,16 +96,22 @@ class ContractService:
             self.logger.error(f"Transaction failed: {transaction}: {str(e)}")
             raise Exception(f"Transaction failed: {str(e)}")
 
-    def _get_nonce(self, from_address: Address) -> int:
+    @staticmethod
+    def get_address_nonce(from_address: Address, w3: Web3) -> int:
         try:
-            latest_nonce = self.w3.eth.get_transaction_count(from_address, 'latest')
-            pending_nonce = self.w3.eth.get_transaction_count(from_address, 'pending')
+            latest_nonce = w3.eth.get_transaction_count(from_address, 'latest')
+            pending_nonce = w3.eth.get_transaction_count(from_address, 'pending')
 
             while pending_nonce > latest_nonce:
-                click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transactions, waiting...")
-                latest_nonce = self.w3.eth.get_transaction_count(from_address, 'latest')
+                while pending_nonce > latest_nonce:
+                    # update pending_nonce loop
+                    click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
+                    latest_nonce = w3.eth.get_transaction_count(from_address, 'latest')
 
-                time.sleep(3)
+                    time.sleep(3)
+
+                # update pending_nonce loop
+                pending_nonce = w3.eth.get_transaction_count(from_address, 'pending')
 
             return pending_nonce
 
@@ -114,7 +120,7 @@ class ContractService:
 
     def sign_and_send_tx(self, _transaction, from_private_key: str) -> str:
         from_address = self.w3.eth.account.from_key(from_private_key).address
-        nonce = self._get_nonce(from_address)
+        nonce = ContractService.get_address_nonce(from_address, self.w3)
         transaction = _transaction.build_transaction({'from': from_address, 'nonce': nonce})
 
         self.logger.info(f"Transaction prepared: {_transaction.__dict__}")

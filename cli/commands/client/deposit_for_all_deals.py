@@ -15,6 +15,7 @@ def deposit_for_all_deals(months: int):
     """
     Deposit USDC funds to FileCoinPay account for all accepted deals.
     """
+
     _deposit_for_all_deals(months, client_private_key())
 
 

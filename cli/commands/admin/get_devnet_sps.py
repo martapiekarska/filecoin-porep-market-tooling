@@ -9,4 +9,5 @@ def get_devnet_sps():
     """
     Testing and development purposes.
     """
+
     click.echo(utils.json_pretty(admin_utils.get_devnet_sps()))

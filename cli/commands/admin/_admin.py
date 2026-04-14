@@ -17,6 +17,7 @@ def admin(address: Address = None, private_key: str = None, debug: bool = False)
     """
     Admin commands for managing the PoRep Market.
     """
+
     global ADMIN_PRIVATE_KEY
     ADMIN_PRIVATE_KEY = private_key
 
@@ -50,4 +51,5 @@ def info():
     """
     Display the current admin info.
     """
+
     _info()

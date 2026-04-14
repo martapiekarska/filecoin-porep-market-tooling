@@ -2,6 +2,7 @@
 
 # Testing and development purposes.
 # Simple tool that runs all CLI get commands that requires no user input.
+# Expects success process exit and nothing more.
 
 set -euo pipefail
 
@@ -37,6 +38,6 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   echo "All tests passed"
 ) || {
-  echo "Error: CLI test failed"
+  echo "Error: CLI test failed" >&2
   exit 1
 }
