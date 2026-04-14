@@ -74,14 +74,16 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
 
 @click.command()
 @click.option('--db-url', envvar='SP_REGISTRY_DATABASE_URL', show_envvar=True, help="SP Registry database connection string.", required=True)
-def register_db_sps(db_url: str):
+@click.argument('db_id', type=click.IntRange(min=0), required=False)
+def register_db_sps(db_url: str, db_id: int | None = None):
     """
-    Register Storage Providers from DB at DB_URL.
+    Register Storage Providers from SPRegistry db at DB_URL.
 
-    DB_URL - database connection URL, default is env SP_REGISTRY_DATABASE_URL.
+    DB_ID - ID of the Storage Provider in the SPRegistry database to register, default is all providers with approved KYC status.
     """
 
-    _register_sps(admin_utils.get_db_sps(db_url), admin_private_key())
+    # TODO is kyc_status == approved the only condition to register SP on chain?
+    _register_sps(admin_utils.get_db_sps(db_url, kyc_status='approved', id=db_id), admin_private_key())
 
 
 @click.command()

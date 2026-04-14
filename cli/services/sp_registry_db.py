@@ -72,10 +72,22 @@ class SPRegistryDB:
     def __init__(self, db_url: str):
         self.db_url = db_url
 
-    def get_providers(self, kyc_status: str = None) -> list[SPRegistryDBProvider]:
+    def get_providers(self, kyc_status: str = None, id: int = None) -> list[SPRegistryDBProvider]:
+        query = "SELECT * FROM providers WHERE true"
+        params = []
+
+        if kyc_status is not None:
+            query += " AND kyc_status = %s"
+            params.append(kyc_status)
+
+        if id is not None:
+            query += " AND id = %s"
+            params.append(id)
+
         with psycopg.connect(self.db_url) as conn:
-            providers = [SPRegistryDBProvider.from_db(p) for p in
-                         conn.execute("SELECT * FROM providers WHERE kyc_status = COALESCE(%s, kyc_status)", (kyc_status,)).fetchall()
-                         ]
+            providers = [
+                SPRegistryDBProvider.from_db(p)
+                for p in conn.execute(query, params).fetchall()
+            ]
 
         return providers
