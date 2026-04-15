@@ -1,4 +1,5 @@
 import time
+from math import ceil
 
 import click
 from eth_account.datastructures import SignedMessage
@@ -6,39 +7,45 @@ from web3.auto import w3
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState
+from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState, PoRepMarketDealRequest
 from cli.services.contracts.usdc_token import USDCToken
 
 
-def get_client_deals(client_address: str, state: PoRepMarketDealState = None) -> list[PoRepMarketDealProposal]:
+def get_client_deals(client_address: str, state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
     all_deals = commands_utils.get_all_deals(state)
     return [deal for deal in all_deals if deal.client_address == client_address]
 
 
-# TODO verify this, check for precision loss
-def calculate_deposit_amount_for_deal(deal: PoRepMarketDealProposal, deposit_for_months: int) -> int:
-    if deposit_for_months <= 0:
+def calculate_deposit_amount_for_deal(deal: PoRepMarketDealRequest, deposit_for_months: int = 1) -> int:
+    if deposit_for_months < 0:
         raise Exception("Deposit for months must be greater than 0")
 
-    deal_size_bytes = deal.terms.deal_size_bytes
-    deal_size_sectors = deal_size_bytes / (32 * 1024 ** 2)
-    return int(deal_size_sectors * deal.terms.price_per_sector_per_month) * deposit_for_months
+    deal_size_sectors = commands_utils.bytes_to_sectors(deal.terms.deal_size_bytes)
+    result = deal_size_sectors * deal.terms.price_per_sector_per_month * deposit_for_months
+
+    if result != ceil(result):
+        utils.ask_user_confirm_or_fail(
+            f"Calculated deposit amount {result} != {ceil(result)}. Continue?", default_answer=True)
+
+    return ceil(result)
 
 
 def get_permit_deadline() -> int:
-    return int(time.time()) + 3600
+    return int(time.time()) + 3600  # 1 hour
 
 
+# EIP-712 signing for Filecoin Pay permit msg
 def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key: str) -> SignedMessage:
     token_name = USDCToken().name()
     from_address = w3.eth.account.from_key(from_private_key).address
 
+    # signed_msg.signature is sensitive info, should never be logged
     signed_msg = w3.eth.account.sign_typed_data(
         domain_data={
             "name": token_name,
             "version": "1",
             "chainId": commands_utils.get_chain_id(),
-            "verifyingContract": utils.get_env("USDC_TOKEN")
+            "verifyingContract": utils.get_env("USDFC_TOKEN")
         },
         message_types={
             "Permit": [
@@ -58,7 +65,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
         }, private_key=from_private_key)
 
     if not signed_msg.v or not signed_msg.r or not signed_msg.s or not signed_msg.signature:
-        raise Exception(f"Invalid signature generated for permit: {signed_msg}")
+        raise Exception("Invalid EIP-712 signature generated for Filecoin Pay permit")
 
-    click.echo(f"Message signed for permit: {signed_msg.signature.hex()}")
+    click.echo(f"EIP-712 message signed for Filecoin Pay permit: {utils.private_str_to_log_str(signed_msg.signature.hex())}")
     return signed_msg

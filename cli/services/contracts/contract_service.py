@@ -40,14 +40,17 @@ class Address(str):
 
     @staticmethod
     def is_filecoin_address(addr: str) -> bool:
-        return addr.startswith("f") or addr.startswith("t")
+        return (addr.startswith("f0") or
+                addr.startswith("f1") or
+                addr.startswith("f2") or
+                addr.startswith("f3") or
+                addr.startswith("f4") or
+                addr.startswith("f5") or
+                addr.startswith("t"))
 
     @staticmethod
     def from_filecoin_address(addr: str) -> "Address":
-        if not Address.is_filecoin_address(addr):
-            raise ValueError(f"Not a filecoin address: {addr}")
-
-        w3 = Web3(Web3.HTTPProvider(utils.get_env('RPC_URL')))
+        w3 = Web3(Web3.HTTPProvider(utils.get_env("RPC_URL")))
         response = w3.provider.make_request(
             RPCEndpoint("Filecoin.FilecoinAddressToEthAddress"),
             [addr]
@@ -79,23 +82,40 @@ class ContractService:
     def _get_class_name(self):
         return self.__class__.__name__
 
-    def _send_tx(self, signed_tx: SignedTransaction, dry_run: bool) -> str:
+    def _send_signed_tx(self, signed_tx: SignedTransaction, dry_run: bool = False) -> str:
         if dry_run:
             return "0x" + "00" * 32
+
         return self.w3.eth.send_raw_transaction(signed_tx.raw_transaction).to_0x_hex()
 
-    def _sign_and_send_tx(self, transaction, from_private_key: str, dry_run: bool) -> str:
+    def _sign_and_send_tx(self, transaction, tx_params, from_private_key: str, dry_run: bool = False) -> str:
+        # transaction.args is sensitive info, should never be logged
+        # tx_params.data is sensitive info, should never be logged
+
+        def tx_to_log_string(transaction, tx_params) -> str:
+            result = {
+                "chainId": tx_params["chainId"],
+                "from": tx_params["from"],
+                "to": tx_params["to"],
+                "signature": transaction.signature,
+                "nonce": tx_params["nonce"],
+                "gas": tx_params["gas"],
+                "value": tx_params["value"],
+            }
+
+            return utils.json_pretty(result)
+
         try:
-            signed_tx = self.w3.eth.account.sign_transaction(transaction, from_private_key)
+            signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
         except Exception as e:
             raise Exception(f"Transaction signing failed: {str(e)}") from e
 
         try:
-            tx_hash = self._send_tx(signed_tx, dry_run)
-            self.logger.info(f"Transaction sent: {transaction}: {tx_hash}")
+            tx_hash = self._send_signed_tx(signed_tx, dry_run)
+            self.logger.warning(f"Transaction sent: {tx_hash}: {tx_to_log_string(transaction, tx_params)}")
             return tx_hash
         except Exception as e:
-            self.logger.error(f"Transaction failed: {transaction}: {str(e)}")
+            self.logger.error(f"Transaction failed: {str(e)}: {tx_to_log_string(transaction, tx_params)}")
             raise Exception(f"Transaction failed: {str(e)}") from e
 
     @staticmethod
@@ -121,23 +141,26 @@ class ContractService:
             raise Exception(f"Failed to get nonce for address {from_address}: {str(e)}") from e
 
     def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
+        # transaction.args is sensitive info, should never be logged
+
         from_address = self.w3.eth.account.from_key(from_private_key).address
         nonce = ContractService.get_address_nonce(from_address, self.w3)
-        _transaction = transaction.build_transaction({"from": from_address, "nonce": nonce})
 
-        self.logger.info(f"Transaction prepared: {transaction.__dict__}")
+        # tx_params.data is sensitive info, should never be logged
+        tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce})
+
         _dry_run = is_dry_run()
 
         if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
-                                      f"== From: {_transaction['from']}\n"
-                                      f"== To: {_transaction['to']}\n"
+                                      f"== From: {tx_params['from']}\n"
+                                      f"== To: {tx_params['to']}\n"
                                       f"== Signature: {transaction.signature}\n"
-                                      f"== Args: {transaction.args}\n"
+                                      f"== Nonce: {tx_params['nonce']}\n"
                                       f"== Gas Price: {self.w3.eth.gas_price} wei\n"
-                                      f"== Gas: {_transaction['gas']}\n"
-                                      f"== Value: {_transaction['value']} wei\n"
+                                      f"== Gas: {tx_params['gas']}\n"
+                                      f"== Value: {tx_params['value']} wei\n"
                                       f"This is the final confirmation", default_answer=_dry_run):
             _dry_run = True
 
         click.echo()
-        return self._sign_and_send_tx(_transaction, from_private_key, _dry_run)
+        return self._sign_and_send_tx(transaction, tx_params, from_private_key, _dry_run)

@@ -1,91 +1,156 @@
+import humanfriendly
+
 from cli import utils
+from cli.commands import utils as commands_utils
 from cli.services.contracts.contract_service import Address
 from cli.services.contracts.sp_registry import SPRegistryProvider, SPRegistrySLIThresholds
+from cli.services.contracts.usdc_token import USDCToken
 from cli.services.sp_registry_db import SPRegistryDB
 
 
-def get_db_sps(db_url: str, kyc_status: str = None, provider_id: int = None) -> list[SPRegistryProvider]:
-    # TODO
+def get_db_sps(db_url: str,
+               kyc_status: str | None = None,
+               organization_id: int | None = None,
+               indexing_pct: int = 0,
+               miner_id: int | None = None) -> list[SPRegistryProvider]:
+    #
     def retrievability_guarantees_to_bps(guarantees: list[str]) -> int:
         def _retrievability_guarantee_to_bps(guarantee: str) -> int:
+            DECIMALS = 2
+            DECIMALS_MULTIPLIER = 10 ** DECIMALS
+
             if guarantee == "hot":
-                return 10000  # 100 %
+                return 90 * DECIMALS_MULTIPLIER  # 90 %
             elif guarantee == "sometimes":
-                return 8000  # 80 %
-            elif guarantee == "cold":
-                return 5000  # 50 %
+                return 75 * DECIMALS_MULTIPLIER  # 75 %
+            elif guarantee == "rarely":
+                return 0 * DECIMALS_MULTIPLIER  # 0 %
             else:
                 raise ValueError(f"Unknown retrievability guarantee: {guarantee}")
 
         return max([_retrievability_guarantee_to_bps(g) for g in guarantees]) if guarantees else 0
 
-    # TODO
+    def retrievability_guarantees_to_latency_ms(guarantees: list[str]) -> int:
+        def _retrievability_guarantee_to_latency_ms(guarantee: str) -> int:
+            if guarantee == "hot":
+                return 20 * 1000  # 20 seconds
+            elif guarantee == "sometimes":
+                return 20 * 1000  # 20 seconds
+            elif guarantee == "rarely":
+                return 24 * 60 * 60 * 1000  # 24 hours
+            else:
+                raise ValueError(f"Unknown retrievability guarantee: {guarantee}")
+
+        return max([_retrievability_guarantee_to_latency_ms(g) for g in guarantees]) if guarantees else 0
+
     def bandwidth_tiers_to_mbps(tiers: list[str]) -> int:
         def _bandwidth_tier_to_mbps(tier: str) -> int:
             if tier == "fast":
-                return 1000
+                return 1000  # 1 Gbps
             elif tier == "normal":
-                return 500
+                return 300  # 300 Mbps
+            elif tier == "slow":
+                return 1  # 1 Mbps
             else:
                 raise ValueError(f"Unknown bandwidth tier: {tier}")
 
         return max([_bandwidth_tier_to_mbps(tier) for tier in tiers]) if tiers else 0
 
-    # TODO
-    def price_per_tib_to_price_per_sector(price_tib_per_month: float, payment_types: list[str]) -> int:
-        if len(payment_types) != 1 or payment_types[0] != "USDFC":
-            raise ValueError(f"Unsupported payment type: {payment_types[0]}")
+    def price_per_tib_tokens_to_per_sector(price_per_tib_tokens: float, payment_types: list[str]) -> int:
+        if not payment_types or len(payment_types) != 1 or payment_types[0] != "USDFC":
+            raise ValueError(f"Unsupported payment type: {payment_types}")
 
-        # Convert price from per TiB to per sector (32 GiB)
-        result = price_tib_per_month * 1024 / 32
+        price_per_tib = utils.from_tokens(price_per_tib_tokens, USDCToken().decimals())
+        sectors_per_tib = 1024 ** 4 // commands_utils.SECTOR_SIZE_BYTES
+        result = price_per_tib / sectors_per_tib
+
         if result != int(result):
-            raise ValueError(f"Price per sector must be an integer, got {result} from price_tib_per_month={price_tib_per_month}")
+            raise ValueError(f"Precision lost: {result:.10f} != {int(result)}")
 
         return int(result)
 
-    organizations = SPRegistryDB(db_url).get_providers(kyc_status, provider_id)
+    #
+
+    organizations = SPRegistryDB(db_url).get_organizations(kyc_status, organization_id, miner_id)
     result: list[SPRegistryProvider] = []
 
     for org in organizations:
-        if org.deal_duration_max_months * 30 > 1278:
+        if Address.is_filecoin_address(org.payment_address_evm):
+            utils.ask_user_ok(
+                f"Organization {org.organization_address} [db_id {org.id}] has payment_address_evm {org.payment_address_evm} which is a Filecoin f-address, "
+                f"expected EVM 0x-address. "
+                f"Cannot return SPs from this organization")
+            continue
+
+        if org.deal_duration_min_months < 0:
+            utils.ask_user_ok(
+                f"Organization {org.organization_address} [db_id {org.id}] has invalid min deal duration of {org.deal_duration_min_months} months. "
+                f"Cannot return SPs from this organization")
+            continue
+
+        if org.kyc_status.strip().lower() != "approved":
             if not utils.ask_user_confirm(
-                    f"Provider {org.id} has max deal duration of {org.deal_duration_max_months} months, "
-                    f"which exceeds the SPRegistry contract limit of 1278 days (42 months). It will be truncated to 1278 days. "
-                    f"Return this provider?",
+                    f"Organization {org.organization_address} [db_id {org.id}] has kyc_status {org.kyc_status}, which is not approved. "
+                    f"Return SPs from this organization?",
+                    default_answer=bool(organization_id)):
+                continue
+
+        # TODO LATER get 1278 from smart contract
+        if org.deal_duration_max_months * 30 > 1278:  # PoRep Market smart contracts assumes month == 30 days
+            max_deal_duration_days = 42 * 30  # 42 months
+
+            if not utils.ask_user_confirm(
+                    f"Organization {org.organization_address} [db_id {org.id}] has max deal duration of {org.deal_duration_max_months} months "
+                    f"({org.deal_duration_max_months * 30} days), "
+                    f"which exceeds the SPRegistry contract limit of {max_deal_duration_days} days. It will be truncated to this value. "
+                    f"Return SPs from this organization?",
                     default_answer=True):
                 continue
+        else:
+            max_deal_duration_days = org.deal_duration_max_months * 30  # PoRep Market smart contracts assumes month == 30 days
+
+        if org.deal_duration_min_months * 30 > max_deal_duration_days:
+            utils.ask_user_ok(
+                f"Organization {org.organization_address} [db_id {org.id}] has min deal duration of {org.deal_duration_min_months} months, "
+                f"which exceeds the max deal duration of {org.deal_duration_max_months} months. "
+                f"Cannot return SPs from this organization")
+            continue
 
         if Address.is_filecoin_address(org.organization_address):
-            # organization_address = Address.from_filecoin_address(org.organization_address)
-            organization_address = "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951"  # TODO
+            # TODO LATER remove me
+            _MOCK_F_ORG_ADDR = utils.get_env("_MOCK_F_ORG_ADDR", default="").strip().lower()
+            organization_address = Address(_MOCK_F_ORG_ADDR) if _MOCK_F_ORG_ADDR else Address.from_filecoin_address(org.organization_address)
+
             if not utils.ask_user_confirm(
-                    f"Converted provider {org.id} Filecoin organization_address {org.organization_address} to EVM address {organization_address}. "
-                    f"Return this provider?",
+                    f"Converted organization {org.organization_address} [db_id {org.id}] Filecoin f-organization_address "
+                    f"{org.organization_address} to EVM 0x-address {organization_address}. "
+                    f"Return SPs from this organization?",
                     default_answer=True):
                 continue
-
         else:
             organization_address = org.organization_address
 
-        if Address.is_filecoin_address(org.payment_address_evm):
-            raise Exception(f"Provider {org.id} has payment_address_evm {org.payment_address_evm} which is a Filecoin address, expected EVM address")
+        #
 
-        # TODO
-        result.append(SPRegistryProvider(
-            provider_id=org.id,  # TODO assumes db id == smart contract id
-            organization_address=organization_address,
-            capabilities=SPRegistrySLIThresholds(
-                retrievability_bps=retrievability_guarantees_to_bps(org.retrievability_guarantees),
-                bandwidth_mbps=bandwidth_tiers_to_mbps(org.bandwidth_tier),
-                latency_ms=100,  # TODO
-                indexing_pct=100,  # TODO
-            ),
-            available_bytes=5 * 1024 * 1024 * 1024,
-            price_per_sector_per_month=price_per_tib_to_price_per_sector(org.min_price_per_tib_usd, org.payment_types),
-            min_deal_duration_days=org.deal_duration_min_months * 30,  # PoRep market smart contracts assumes month == 30 days
-            max_deal_duration_days=min(org.deal_duration_max_months * 30, 1278),  # PoRep market smart contracts assumes month == 30 days
-            payee_address=org.payment_address_evm
-        ))
+        for miner_id in org.miner_ids:
+            result.append(SPRegistryProvider(
+                provider_id=miner_id,
+                organization_address=organization_address,
+                capabilities=SPRegistrySLIThresholds(
+                    retrievability_bps=retrievability_guarantees_to_bps(org.retrievability_guarantees),
+                    bandwidth_mbps=bandwidth_tiers_to_mbps(org.bandwidth_tier),
+                    latency_ms=retrievability_guarantees_to_latency_ms(org.retrievability_guarantees),
+                    indexing_pct=indexing_pct,
+                ),
+                available_bytes=humanfriendly.parse_size(org.capacity_commitment),
+                price_per_sector_per_month=price_per_tib_tokens_to_per_sector(org.min_price_per_tib_usd, org.payment_types),
+                min_deal_duration_days=org.deal_duration_min_months * 30,  # PoRep Market smart contracts assumes month == 30 days
+                max_deal_duration_days=max_deal_duration_days,
+                payee_address=org.payment_address_evm
+            ))
+
+    if miner_id is not None and result:
+        result = [sp for sp in result if sp.provider_id == miner_id]
 
     return result
 
@@ -99,9 +164,9 @@ def get_devnet_sps() -> list[SPRegistryProvider]:
                                bandwidth_mbps=10000,
                                latency_ms=7,
                                indexing_pct=100),
-                           available_bytes=94359739998368,
-                           price_per_sector_per_month=0,
-                           min_deal_duration_days=2,
+                           available_bytes=94359739998361,
+                           price_per_sector_per_month=1,
+                           min_deal_duration_days=1,
                            max_deal_duration_days=1278,
                            payee_address="0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951"),
         SPRegistryProvider(provider_id=1000,

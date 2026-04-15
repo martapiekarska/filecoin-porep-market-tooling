@@ -1,16 +1,16 @@
-import json
 from datetime import datetime
 
 import psycopg
 
 from cli import utils
+from cli.services.contracts.contract_service import Address
 
 
 @utils.json_dataclass()
-class SPRegistryDBProvider:
+class SPRegistryDBOrganization:
     id: int
     name: str
-    miner_ids: list[str]
+    miner_ids: list[int]
     accepted_client_geographies: list[str]
     payment_types: list[str]
     retrievability_guarantees: list[str]
@@ -30,22 +30,25 @@ class SPRegistryDBProvider:
     updated_at: datetime
     geographical_location: list[str]
     kyc_email: str
-    payment_address_evm: str
+    payment_address_evm: Address
     deal_duration_min_months: int
     deal_duration_max_months: int
     min_price_per_tib_usd: float
     sp_software: list[str]
+    capacity_commitment: str
 
     @staticmethod
-    def from_db(data) -> "SPRegistryDBProvider":
-        return SPRegistryDBProvider(
-            id=data[0],
+    def from_db(data) -> "SPRegistryDBOrganization":
+        miner_ids = [utils.f0_str_id_to_int(miner_id) for miner_id in data[2]]
+
+        return SPRegistryDBOrganization(
+            id=int(data[0]),
             name=data[1],
-            miner_ids=data[2],
+            miner_ids=miner_ids,
             accepted_client_geographies=data[3],
             payment_types=data[4],
             retrievability_guarantees=data[5],
-            bandwidth_tier=json.loads(f"[{data[6][1:-1]}]"),
+            bandwidth_tier=data[6],
             service_frequency=data[7],
             data_types=data[8],
             customer_support_email=data[9],
@@ -56,16 +59,17 @@ class SPRegistryDBProvider:
             kyc_session_id=data[14],
             kyc_session_url=data[15],
             kyc_status=data[16],
-            kyc_completed_at=f"{data[17]}",
+            kyc_completed_at=data[17],
             created_at=data[18],
             updated_at=data[19],
             geographical_location=data[20],
             kyc_email=data[21],
-            payment_address_evm=data[22],
-            deal_duration_min_months=data[23],
-            deal_duration_max_months=data[24],
-            min_price_per_tib_usd=data[25],
-            sp_software=data[26]
+            payment_address_evm=Address(data[22]),
+            deal_duration_min_months=int(data[23]),
+            deal_duration_max_months=int(data[24]),
+            min_price_per_tib_usd=float(data[25]),
+            sp_software=data[26],
+            capacity_commitment=data[27],
         )
 
 
@@ -73,7 +77,14 @@ class SPRegistryDB:
     def __init__(self, db_url: str):
         self.db_url = db_url
 
-    def get_providers(self, kyc_status: str = None, provider_id: int = None) -> list[SPRegistryDBProvider]:
+    def get_organizations(self,
+                          kyc_status: str | None = None,
+                          organization_id: int | None = None,
+                          miner_id: int | None = None) -> list[SPRegistryDBOrganization]:
+        #
+        # this is confusing but organizations are called providers in the SPRegistry database
+        # and the database miner_ids and considered provider_ids in PoRep Market smart contracts
+
         query = "SELECT * FROM providers WHERE true"
         params = []
 
@@ -81,14 +92,19 @@ class SPRegistryDB:
             query += " AND kyc_status = %s"
             params.append(kyc_status)
 
-        if provider_id is not None:
+        if organization_id is not None:
             query += " AND id = %s"
-            params.append(provider_id)
+            params.append(organization_id)
+
+        if miner_id is not None:
+            _miner_id = utils.int_id_to_f0_str(miner_id)
+            query += " AND %s = ANY(miner_ids)"
+            params.append(_miner_id)
 
         with psycopg.connect(self.db_url) as conn:
             providers = [
-                SPRegistryDBProvider.from_db(p)
-                for p in conn.execute(query, params).fetchall()
+                SPRegistryDBOrganization.from_db(p)
+                for p in conn.execute(bytes(query, "utf-8"), params).fetchall()
             ]
 
         return providers

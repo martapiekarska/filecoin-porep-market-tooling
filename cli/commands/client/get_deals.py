@@ -10,9 +10,9 @@ from cli.services.contracts.porep_market import PoRepMarketDealState
 @click.argument('state', required=False, type=click.Choice(PoRepMarketDealState.to_string_list(), case_sensitive=False))
 def get_deals(state: PoRepMarketDealState | None):
     """
-    Get deals for the client by state.
+    Get deals for the client.
 
-    STATE - Deal state [default: all states].
+    STATE - Deal state to filter by. [default: all states]
     """
 
     click.echo(utils.json_pretty(client_utils.get_client_deals(client_address(), state)))

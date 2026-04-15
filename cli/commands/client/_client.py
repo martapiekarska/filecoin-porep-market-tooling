@@ -10,10 +10,11 @@ CLIENT_PRIVATE_KEY: str | None = None
 
 
 @click.group()
-@click.option("--address", help="Client address to use, default is address from --private-key option.")
-@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", help="Client private key to use.", show_envvar=True)
-@click.option("--info", help="Confirm current info before executing command.", is_flag=True, default=False, show_default=True)
-def client(address: Address = None, private_key: str = None, info: bool = False):
+@click.option("--address", help="Client address to use.  [default: address from private key]")
+@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", show_envvar=True, help="Client private key to use.")
+@click.option("--info", is_flag=True, default=False, show_default=True,
+              help="Confirm current info before executing command.")
+def client(address: Address | None = None, private_key: str | None = None, info: bool = False):
     """
     Client commands for interacting with the PoRep Market.
     """
@@ -26,7 +27,8 @@ def client(address: Address = None, private_key: str = None, info: bool = False)
 
     if info:
         _info()
-        utils.ask_user_confirm("Continue?", default_answer=True)
+        utils.ask_user_confirm_or_fail("\n\nContinue?", default_answer=True)
+        click.echo("\n\n")
 
 
 def client_address() -> Address:
@@ -39,24 +41,25 @@ def client_address() -> Address:
 def client_private_key() -> str:
     commands_utils.validate_address_matches_private_key(client_address(), CLIENT_PRIVATE_KEY)
 
-    return CLIENT_PRIVATE_KEY
+    return str(CLIENT_PRIVATE_KEY)
 
 
 def _info():
     click.echo(f"Client address: {CLIENT_ADDRESS}")
-    click.echo(f"Client private key: {utils.private_key_to_log_string(CLIENT_PRIVATE_KEY)}")
+    click.echo(f"Client private key: {utils.private_str_to_log_str(CLIENT_PRIVATE_KEY)}")
     click.echo()
     commands_utils.print_info()
 
 
 @click.command()
-@click.option("--test-keys", is_flag=True, help="Fail if the private key does not matches provided address.", default=False, show_default=True)
+@click.option("--test-keys", is_flag=True, default=False, show_default=True,
+              help="Fail if the private key does not matches provided address.")
 def info(test_keys: bool = False):
     """
     Display the current client info.
     """
 
     if test_keys:
-        commands_utils.validate_address_matches_private_key(client_address(), client_private_key())
+        _ = client_private_key()  # validate only
 
     _info()

@@ -5,7 +5,7 @@ from cli.services.contracts.contract_service import ContractService, Address
 
 
 class ValidatorFactory(ContractService):
-    def __init__(self, contract_address: Address | str = None):
+    def __init__(self, contract_address: Address | str | None = None):
         super().__init__(contract_address if contract_address else utils.get_env('VALIDATOR_FACTORY'),
                          os.path.dirname(os.path.realpath(__file__)) + '/abi/ValidatorFactory.json')
 

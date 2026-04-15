@@ -12,12 +12,12 @@ class FileCoinPayAccount:
     lockup_last_settled_at: int  # epoch up to and including which lockup has been settled for the account
 
     @staticmethod
-    def from_array(data) -> "FileCoinPayAccount":
+    def from_web3(data) -> "FileCoinPayAccount":
         return FileCoinPayAccount(
-            funds=data[0],
-            lockup_current=data[1],
-            lockup_rate=data[2],
-            lockup_last_settled_at=data[3]
+            funds=int(data[0]),
+            lockup_current=int(data[1]),
+            lockup_rate=int(data[2]),
+            lockup_last_settled_at=int(data[3])
         )
 
 
@@ -31,19 +31,20 @@ class FileCoinPayOperatorApproval:
     max_lockup_period: int
 
     @staticmethod
-    def from_array(data) -> "FileCoinPayOperatorApproval":
+    def from_web3(data) -> "FileCoinPayOperatorApproval":
         return FileCoinPayOperatorApproval(
-            is_approved=data[0],
-            rate_allowance=data[1],
-            lockup_allowance=data[2],
-            rate_usage=data[3],
-            lockup_usage=data[4],
-            max_lockup_period=data[5]
+            is_approved=bool(data[0]),
+            rate_allowance=int(data[1]),
+            lockup_allowance=int(data[2]),
+            rate_usage=int(data[3]),
+            lockup_usage=int(data[4]),
+            max_lockup_period=int(data[5])
         )
 
 
+# TODO LATER make token default = USDFC_TOKEN here
 class FileCoinPay(ContractService):
-    def __init__(self, contract_address: Address | str = None):
+    def __init__(self, contract_address: Address | str | None = None):
         super().__init__(contract_address if contract_address else utils.get_env("FILECOIN_PAY"),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/FileCoinPay.json")
 
@@ -75,9 +76,10 @@ class FileCoinPay(ContractService):
                                                  lockup_allowance: int,
                                                  max_lockup_period: int,
                                                  from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.depositWithPermitAndApproveOperator(
-            token, to, amount, deadline, v, r, s, operator, rate_allowance, lockup_allowance, max_lockup_period
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.depositWithPermitAndApproveOperator(
+                token, to, amount, deadline, v, r, s, operator, rate_allowance, lockup_allowance, max_lockup_period
+            ), from_private_key)
 
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction,
     #         while also increasing operator approval allowances.
@@ -101,9 +103,10 @@ class FileCoinPay(ContractService):
                                                            rate_allowance_increase: int,
                                                            lockup_allowance_increase: int,
                                                            from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.depositWithPermitAndIncreaseOperatorApproval(
-            token, to, amount, deadline, v, r, s, operator, rate_allowance_increase, lockup_allowance_increase
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.depositWithPermitAndIncreaseOperatorApproval(
+                token, to, amount, deadline, v, r, s, operator, rate_allowance_increase, lockup_allowance_increase
+            ), from_private_key)
 
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction.
     # @param token The ERC20 token address to deposit.
@@ -118,15 +121,16 @@ class FileCoinPay(ContractService):
                             deadline: int,
                             v: int, r: bytes, s: bytes,
                             from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.depositWithPermit(
-            token, to, amount, deadline, v, r, s
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.depositWithPermit(
+                token, to, amount, deadline, v, r, s
+            ), from_private_key)
 
     # token => client => operator => Approval
     def get_operator_approval(self, token: Address, client: Address, operator: Address) -> FileCoinPayOperatorApproval:
-        return FileCoinPayOperatorApproval.from_array(self.contract.functions.operatorApprovals(token, client, operator).call())
+        return FileCoinPayOperatorApproval.from_web3(self.contract.functions.operatorApprovals(token, client, operator).call())
 
     # Internal balances
     # The self-balance collects network fees
     def get_account(self, token: Address, owner: Address) -> FileCoinPayAccount:
-        return FileCoinPayAccount.from_array(self.contract.functions.accounts(token, owner).call())
+        return FileCoinPayAccount.from_web3(self.contract.functions.accounts(token, owner).call())

@@ -1,5 +1,5 @@
+import enum
 import os
-from enum import Enum
 
 from cli import utils
 from cli.services.contracts.contract_service import ContractService, Address
@@ -8,7 +8,7 @@ from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
 
 # @notice DealState enum
 # @dev Represents the various states a deal can be
-class PoRepMarketDealState(Enum):
+class PoRepMarketDealState(enum.Enum):
     PROPOSED = 0
     ACCEPTED = 1
     COMPLETED = 2
@@ -38,6 +38,15 @@ class PoRepMarketDealState(Enum):
 
     def __str__(self):
         return self.name
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return super().__eq__(PoRepMarketDealState.from_string(other))
+
+        return super().__eq__(other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __repr__(self):
         return str(self)
@@ -82,62 +91,65 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
         self.validator_address = Address(self.validator_address)
 
     @staticmethod
-    def from_array(data) -> "PoRepMarketDealProposal":
+    def from_web3(data, expected_deal_id: int | None = None) -> "PoRepMarketDealProposal":
+        if not Address(data[1]):
+            # noinspection PyTypeChecker
+            return None
+
+        if expected_deal_id is not None and expected_deal_id != data[0]:
+            raise Exception(f"Invalid deal proposal returned from contract. Expected deal_id {expected_deal_id}, got {data[0]}")
+
         return PoRepMarketDealProposal(
-            deal_id=data[0],
-            client_address=data[1],
-            provider_id=data[2],
+            deal_id=int(data[0]),
+            client_address=Address(data[1]),
+            provider_id=int(data[2]),
             requirements=SPRegistrySLIThresholds(
-                retrievability_bps=data[3][0],
-                bandwidth_mbps=data[3][1],
-                latency_ms=data[3][2],
-                indexing_pct=data[3][3],
+                retrievability_bps=int(data[3][0]),
+                bandwidth_mbps=int(data[3][1]),
+                latency_ms=int(data[3][2]),
+                indexing_pct=int(data[3][3]),
             ),
             terms=PoRepMarketDealTerms(
-                deal_size_bytes=data[4][0],
-                price_per_sector_per_month=data[4][1],
-                duration_days=data[4][2],
+                deal_size_bytes=int(data[4][0]),
+                price_per_sector_per_month=int(data[4][1]),
+                duration_days=int(data[4][2]),
             ),
             manifest_location=data[8],
             validator_address=data[5],
             state=PoRepMarketDealState(data[6]),
-            rail_id=data[7],
+            rail_id=int(data[7]),
         )
 
 
 class PoRepMarket(ContractService):
-    def __init__(self, contract_address: Address | str = None):
+    def __init__(self, contract_address: Address | str | None = None):
         super().__init__(contract_address if contract_address else utils.get_env("POREP_MARKET"),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/PoRepMarket.json")
 
     # @notice Proposes a deal
     def propose_deal(self, deal: PoRepMarketDealRequest, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.proposeDeal(
-            (deal.requirements.retrievability_bps, deal.requirements.bandwidth_mbps, deal.requirements.latency_ms, deal.requirements.indexing_pct),
-            (deal.terms.deal_size_bytes, deal.terms.price_per_sector_per_month, deal.terms.duration_days),
-            deal.manifest_location
-        ), from_private_key)
+        requirements = deal.requirements
+        terms = deal.terms
+
+        return self.sign_and_send_tx(
+            self.contract.functions.proposeDeal(
+                (requirements.retrievability_bps, requirements.bandwidth_mbps, requirements.latency_ms, requirements.indexing_pct),
+                (terms.deal_size_bytes, terms.price_per_sector_per_month, terms.duration_days),
+                deal.manifest_location
+            ), from_private_key)
 
     # @notice Gets a deal proposal
     # @param deal_id The id of the deal proposal
     # @return PoRepMarketDealProposal The deal proposal
-    def get_deal_proposal(self, deal_id: int) -> PoRepMarketDealProposal:
-        deal = self.contract.functions.getDealProposal(deal_id).call()
-
-        if not Address(deal[1]):
-            raise Exception(f"Deal proposal with id {deal_id} does not exist")
-
-        if deal_id != deal[0]:
-            raise Exception(f"Invalid deal proposal returned from contract. Expected deal_id {deal_id}, got {deal[0]}")
-
-        return PoRepMarketDealProposal.from_array(deal)
+    def get_deal_proposal(self, deal_id: int) -> PoRepMarketDealProposal | None:
+        return PoRepMarketDealProposal.from_web3(self.contract.functions.getDealProposal(deal_id).call())
 
     # @notice Gets deals for a specific organization by state
     # @param organization_address The address of the organization
     # @param state The state of the deals to retrieve
     # @return deals Array of deal proposals for the organization in the specified state (from all providers associated with the organization)
     def get_deals_for_organization_by_state(self, organization_address: Address, state: PoRepMarketDealState) -> list[PoRepMarketDealProposal]:
-        return [PoRepMarketDealProposal.from_array(deal) for deal in
+        return [PoRepMarketDealProposal.from_web3(deal) for deal in
                 self.contract.functions.getDealsForOrganizationByState(organization_address, state.value).call()]
 
     # @notice Accepts a deal
@@ -167,7 +179,7 @@ class PoRepMarket(ContractService):
     # @notice Gets all completed deals
     # @return completedDeals Array of completed deal proposals
     def get_completed_deals(self) -> list[PoRepMarketDealProposal]:
-        return [PoRepMarketDealProposal.from_array(deal) for deal in self.contract.functions.getCompletedDeals().call()]
+        return [PoRepMarketDealProposal.from_web3(deal) for deal in self.contract.functions.getCompletedDeals().call()]
 
     # @notice Updates the rail id for a deal proposal
     # @dev Updates the rail id for a deal proposal
@@ -175,3 +187,13 @@ class PoRepMarket(ContractService):
     # @param railId The id of the rail
     def update_rail_id(self, deal_id: int, rail_id: int, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.updateRailId(deal_id, rail_id), from_private_key)
+
+    # @notice Maximum deal duration in days. See PoRepTypes.MAX_DEAL_DURATION_DAYS.
+    # @dev Any provider limit above this is unreachable: PoRepMarket rejects deals with durationDays > 1278.
+    def get_max_deal_duration_days(self) -> int:
+        return self.contract.functions.MAX_DEAL_DURATION_DAYS().call()
+
+    # @notice Number of epochs in one month
+    # @dev 30 days * 24 hours/day * 60 minutes/hour * 2 epochs/minute = 86_400 epochs
+    def get_epochs_in_month(self) -> int:
+        return self.contract.functions.EPOCHS_IN_MONTH().call()

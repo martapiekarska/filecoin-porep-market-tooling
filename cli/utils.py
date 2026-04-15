@@ -16,14 +16,13 @@ def get_env(name, required=True, default=None):
     if not value and default is not None:
         value = default
 
-    if required:
-        if not value:
-            raise Exception(f"Environment variable {name} is not set, see .env file (copy from .env.example)")
+    if value is None and required:
+        raise Exception(f"Environment variable {name} is not set, see .env file (copy from .env.example)")
 
     return value
 
 
-def string_to_bool(value: str) -> bool | None:
+def string_to_bool(value: str | None) -> bool | None:
     if value is None:
         return None
     value = value.strip().lower()
@@ -36,30 +35,39 @@ def string_to_bool(value: str) -> bool | None:
         raise ValueError(f"Unknown boolean value: {value}")
 
 
-def ask_user_string(prompt: str, default_value=None, valid_values=None):
-    default_str = f" (default: {default_value})" if default_value else ""
+def ask_user_string(prompt: str, default_answer: str | None = None, valid_answers: list[str] | None = None) -> str:
+    default_str = f" [default: {default_answer}]" if default_answer else ""
+    valid_answers = [answer.strip().lower() for answer in valid_answers] if valid_answers else []
 
     while True:
-        answer = input(f"{prompt}{default_str}: ").strip()
+        answer = input(f"{prompt}{default_str}: ").strip().lower()
 
-        if not answer and default_value is not None:
-            return default_value
-        elif answer and (not valid_values or answer in valid_values):
-            return answer
+        if not answer and default_answer is not None:
+            return default_answer
+        elif answer and (not valid_answers or answer in valid_answers):
+            return str(answer)
         else:
             continue
 
+    return ""  # should not happen
 
+
+# TODO LATER grace exit instead of exception
 def ask_user_confirm_or_fail(prompt: str, default_answer=False):
     if not ask_user_confirm(prompt, default_answer):
         raise Exception("Operation cancelled by user")
+
+
+# TODO LATER ask_user_ok_or_fail?
+def ask_user_ok(prompt: str):
+    ask_user_string(f"{prompt} (OK)", default_answer="")
 
 
 def ask_user_confirm(prompt: str, default_answer=False):
     default_str = "Y/n" if default_answer else "y/n" if default_answer is None else "y/N"
 
     while True:
-        answer = input(f"{prompt} ({default_str}) ").strip().lower()
+        answer = input(f"{prompt} [{default_str}]: ").strip().lower()
 
         if answer == "" and default_answer is not None:
             return default_answer
@@ -104,12 +112,24 @@ def json_pretty(json_data):
     return json.dumps(_json_pretty(json_data), indent=4)
 
 
-def to_tokens(amount: int, decimals: int) -> float:
+# converts 1100000000000000000 wei -> 1.1 ETH
+def to_tokens(amount: int | float, decimals: int) -> float:
     return amount / (10 ** decimals)
 
 
-def from_tokens(amount: int, decimals: int):
-    return amount * (10 ** decimals)
+def to_tokens_str(amount: int | float, decimals: int) -> str:
+    return "{:.{}f}".format(to_tokens(amount, decimals), decimals)  # cannot be f-string because decimals is dynamic
+
+
+# converts 1.1 ETH -> 1100000000000000000 wei
+# TODO LATER rename this to to_wei and from_wei
+def from_tokens(amount: int | float, decimals: int) -> int:
+    result = amount * (10 ** decimals)
+
+    if result != int(result):
+        raise ValueError(f"Precision lost: {result:.10f} != {int(result)}")
+
+    return int(result)
 
 
 def int_to_bytes(x: int, size: int = 32) -> bytes:
@@ -122,8 +142,49 @@ def int_from_bytes(xbytes: bytes) -> int:
     return int.from_bytes(xbytes, "big")
 
 
-def private_key_to_log_string(private_key: str) -> str:
-    if len(private_key) < 10:
-        return "*" * len(private_key)
+def private_str_to_log_str(private_str: str | None) -> str:
+    if not private_str:
+        return ""
 
-    return f"{private_key[:6]}...{private_key[-4:]}"
+    hex_padding = 2 if private_str.startswith("0x") else 0
+
+    if len(private_str) > 65:
+        return f"{private_str[:4 + hex_padding]}...{private_str[-4:]}"
+
+    if len(private_str) > 40:
+        return f"{private_str[:2 + hex_padding]}...{private_str[-2:]}"
+
+    if len(private_str) > 20:
+        return f"{private_str[:1 + hex_padding]}...{private_str[-1:]}"
+
+    if len(private_str) > 5:
+        return "*" * len(private_str)
+
+    return "*" * 5
+
+
+# converts Filecoin ID "f01234" to integer ID 1234
+def f0_str_id_to_int(f_id: str | None) -> int | None:
+    if not f_id:
+        return None
+
+    if f_id.startswith("f0"):
+        result = int(f_id[2:])
+    else:
+        result = int(f_id)
+
+    if result < 1000:
+        raise ValueError(f"Invalid f_id: {f_id}")
+
+    return result
+
+
+# converts integer ID 1234 to Filecoin ID "f01234"
+def int_id_to_f0_str(int_id: int | None) -> str | None:
+    if int_id is None:
+        return None
+
+    if int_id < 0:
+        raise ValueError(f"Invalid int_id: {int_id}")
+
+    return f"f0{int_id}"

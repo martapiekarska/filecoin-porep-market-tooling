@@ -14,7 +14,7 @@ class SPRegistrySLIThresholds:
 
 @utils.json_dataclass()
 class SPRegistryProvider:
-    provider_id: int
+    provider_id: int  # f0-id of the SP in Filecoin network
     organization_address: Address
     capabilities: SPRegistrySLIThresholds
     available_bytes: int
@@ -36,47 +36,53 @@ class SPRegistryProviderInfo(SPRegistryProvider):
     blocked: bool
 
     @staticmethod
-    def from_array(provider_id, data) -> "SPRegistryProviderInfo":
+    def from_web3(provider_id, data) -> "SPRegistryProviderInfo":
+        if not Address(data[0]):
+            # noinspection PyTypeChecker
+            return None
+
         return SPRegistryProviderInfo(
-            provider_id=provider_id,
-            organization_address=data[0],
-            payee_address=data[1],
+            provider_id=int(provider_id),
+            organization_address=Address(data[0]),
+            payee_address=Address(data[1]),
             capabilities=SPRegistrySLIThresholds(
-                retrievability_bps=data[4][0],
-                bandwidth_mbps=data[4][1],
-                latency_ms=data[4][2],
-                indexing_pct=data[4][3],
+                retrievability_bps=int(data[4][0]),
+                bandwidth_mbps=int(data[4][1]),
+                latency_ms=int(data[4][2]),
+                indexing_pct=int(data[4][3]),
             ),
-            available_bytes=data[5],
-            price_per_sector_per_month=data[8],
-            min_deal_duration_days=data[9],
-            max_deal_duration_days=data[10],
-            paused=data[2],
-            blocked=data[3],
-            committed_bytes=data[6],
-            pending_bytes=data[7],
+            available_bytes=int(data[5]),
+            price_per_sector_per_month=int(data[8]),
+            min_deal_duration_days=int(data[9]),
+            max_deal_duration_days=int(data[10]),
+            paused=bool(data[2]),
+            blocked=bool(data[3]),
+            committed_bytes=int(data[6]),
+            pending_bytes=int(data[7]),
         )
 
 
 class SPRegistry(ContractService):
-    def __init__(self, contract_address: Address | str = None):
+    def __init__(self, contract_address: Address | str | None = None):
         super().__init__(contract_address if contract_address else utils.get_env("SP_REGISTRY"),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/SPRegistry.json")
 
     # @notice Register a provider with full configuration in one call
     # @dev Admin convenience function for testnet onboarding. NOT in ISPRegistry interface.
     def register_provider_for(self, provider: SPRegistryProvider, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.registerProviderFor(
-            provider.provider_id,
-            provider.organization_address,
-            (provider.capabilities.retrievability_bps, provider.capabilities.bandwidth_mbps, provider.capabilities.latency_ms,
-             provider.capabilities.indexing_pct),
-            provider.available_bytes,
-            provider.price_per_sector_per_month,
-            provider.payee_address,
-            provider.min_deal_duration_days,
-            provider.max_deal_duration_days
-        ), from_private_key)
+        capabilities = provider.capabilities
+
+        return self.sign_and_send_tx(
+            self.contract.functions.registerProviderFor(
+                provider.provider_id,
+                provider.organization_address,
+                (capabilities.retrievability_bps, capabilities.bandwidth_mbps, capabilities.latency_ms, capabilities.indexing_pct),
+                provider.available_bytes,
+                provider.price_per_sector_per_month,
+                provider.payee_address,
+                provider.min_deal_duration_days,
+                provider.max_deal_duration_days
+            ), from_private_key)
 
     # @notice Check if a provider is registered
     # @param provider_id The provider actor ID
@@ -90,15 +96,13 @@ class SPRegistry(ContractService):
         return self.contract.functions.getProviders().call()
 
     def get_providers_info(self) -> list[SPRegistryProviderInfo]:
-        provider_ids = self.get_providers()
-        return [self.get_provider_info(provider_id) for provider_id in provider_ids]
+        return [self.get_provider_info(provider_id) for provider_id in self.get_providers()]
 
     # @notice Get full information about a provider
     # @param provider_id The provider actor ID
     # @return info The provider's registration info
     def get_provider_info(self, provider_id: int) -> SPRegistryProviderInfo:
-        info = self.contract.functions.getProviderInfo(provider_id).call()
-        return SPRegistryProviderInfo.from_array(provider_id, info)
+        return SPRegistryProviderInfo.from_web3(provider_id, self.contract.functions.getProviderInfo(provider_id).call())
 
     # @notice Get all providers registered under an organization
     # @param organization_address The organization address
@@ -106,49 +110,62 @@ class SPRegistry(ContractService):
     def get_providers_by_organization(self, organization_address: Address) -> list[int]:
         return self.contract.functions.getProvidersByOrganization(organization_address).call()
 
+    def get_providers_info_by_organizations(self, organization_address: Address) -> list[SPRegistryProviderInfo]:
+        return [self.get_provider_info(provider_id) for provider_id in self.get_providers_by_organization(organization_address)]
+
     # @notice Set the acceptable deal duration range for a provider
     # @param provider_id The provider to update
     # @param min_deal_duration_days Minimum deal duration in days (0 = no minimum)
     # @param max_deal_duration_days Maximum deal duration in days (0 = no maximum)
-    def set_deal_duration_limits(self, provider_id: int, min_deal_duration_days: int, max_deal_duration_days: int, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.setDealDurationLimits(
-            provider_id,
-            min_deal_duration_days,
-            max_deal_duration_days
-        ), from_private_key)
+    def set_deal_duration_limits(self,
+                                 provider_id:
+                                 int, min_deal_duration_days: int,
+                                 max_deal_duration_days: int,
+                                 from_private_key: str) -> str:
+        #
+        return self.sign_and_send_tx(
+            self.contract.functions.setDealDurationLimits(
+                provider_id,
+                min_deal_duration_days,
+                max_deal_duration_days
+            ), from_private_key)
 
     # @notice Update provider's available storage capacity
     # @param provider_id The provider to update
     # @param available_bytes New available capacity in bytes
     def update_available_space(self, provider_id: int, available_bytes: int, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.updateAvailableSpace(
-            provider_id,
-            available_bytes
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.updateAvailableSpace(
+                provider_id,
+                available_bytes
+            ), from_private_key)
 
     # @notice Set SLI capabilities for a provider
     # @param provider_id The provider to update
     # @param capabilities The SLI capabilities this provider guarantees
     def set_capabilities(self, provider_id: int, capabilities: SPRegistrySLIThresholds, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.setCapabilities(
-            provider_id,
-            (capabilities.retrievability_bps, capabilities.bandwidth_mbps, capabilities.latency_ms, capabilities.indexing_pct)
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.setCapabilities(
+                provider_id,
+                (capabilities.retrievability_bps, capabilities.bandwidth_mbps, capabilities.latency_ms, capabilities.indexing_pct)
+            ), from_private_key)
 
     # @notice Set the monthly price per sector for a provider
     # @param provider_id The provider to update
     # @param price_per_sector_per_month The monthly ERC20 token price per 32 GiB sector in smallest units (0 to disable auto-approve)
     def set_price(self, provider_id: int, price_per_sector_per_month: int, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.setPrice(
-            provider_id,
-            price_per_sector_per_month
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.setPrice(
+                provider_id,
+                price_per_sector_per_month
+            ), from_private_key)
 
     # @notice Set the payment recipient address for a provider
     # @param provider_id The provider to update
     # @param payee_address The address that will receive payments for this provider
     def set_payee(self, provider_id: int, payee_address: Address, from_private_key: str) -> str:
-        return self.sign_and_send_tx(self.contract.functions.setPayee(
-            provider_id,
-            payee_address
-        ), from_private_key)
+        return self.sign_and_send_tx(
+            self.contract.functions.setPayee(
+                provider_id,
+                payee_address
+            ), from_private_key)

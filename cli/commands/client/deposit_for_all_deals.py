@@ -10,7 +10,8 @@ from cli.services.contracts.usdc_token import USDCToken
 
 
 @click.command()
-@click.option("--months", type=click.INT, default=1, help="Number of months to calculate required deposit amount for", show_default=True)
+@click.option("--months", type=click.IntRange(min=0), default=1, show_default=True,
+              help="Number of months to calculate required deposit amount for.")
 def deposit_for_all_deals(months: int):
     """
     Deposit USDC funds to FileCoinPay account for all accepted deals.
@@ -29,23 +30,23 @@ def _deposit_for_all_deals(months: int, from_private_key: str):
 # deposits USDC funds to FileCoinPay account for X month of storing deals
 def __deposit_for_all_deals(deals: list[PoRepMarketDealProposal], months: int, from_private_key: str) -> str | None:
     from_address = w3.eth.account.from_key(from_private_key).address
-    filecoinpay_account = FileCoinPay().get_account(utils.get_env("USDC_TOKEN"), from_address)
+    filecoinpay_account = FileCoinPay().get_account(utils.get_env("USDFC_TOKEN"), from_address)
 
     token_decimals = USDCToken().decimals()
     token_name = USDCToken().name()
 
     token_balance = USDCToken().balance_of(from_address)
-    token_balance_tokens = utils.to_tokens(token_balance, token_decimals)
+    token_balance_tokens = utils.to_tokens_str(token_balance, token_decimals)
 
     filecoinpay_available_funds = filecoinpay_account.funds - filecoinpay_account.lockup_current
-    filecoinpay_available_funds_tokens = utils.to_tokens(filecoinpay_available_funds, token_decimals)
+    filecoinpay_available_funds_tokens = utils.to_tokens_str(filecoinpay_available_funds, token_decimals)
 
     total_required_amount = sum(client_utils.calculate_deposit_amount_for_deal(deal, months) for deal in deals)
-    total_required_amount_tokens = utils.to_tokens(total_required_amount, token_decimals)
+    total_required_amount_tokens = utils.to_tokens_str(total_required_amount, token_decimals)
 
     if filecoinpay_available_funds < total_required_amount:
         deposit_amount = total_required_amount - filecoinpay_available_funds
-        deposit_amount_tokens = utils.to_tokens(deposit_amount, token_decimals)
+        deposit_amount_tokens = utils.to_tokens_str(deposit_amount, token_decimals)
 
         permit_deadline = client_utils.get_permit_deadline()
 
@@ -63,7 +64,7 @@ def __deposit_for_all_deals(deals: list[PoRepMarketDealProposal], months: int, f
 
         click.echo()
         signed_msg = client_utils.sign_filecoinpay_permit(deposit_amount, permit_deadline, from_private_key)
-        tx_hash = FileCoinPay().deposit_with_permit(utils.get_env("USDC_TOKEN"),
+        tx_hash = FileCoinPay().deposit_with_permit(utils.get_env("USDFC_TOKEN"),
                                                     from_address,
                                                     deposit_amount,
                                                     permit_deadline,

@@ -8,14 +8,14 @@ from cli.commands.sp._sp import sp_private_key
 
 def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
     from_address = w3.eth.account.from_key(from_private_key).address
-    deals = sp_utils.get_sp_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
+    deals = sp_utils.get_organization_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
 
     click.echo(f"Found {len(deals)} proposed deals.")
 
     for deal in deals:
         _answer = answer if answer else utils.ask_user_string(f"\nNew deal id {deal.deal_id}: {deal} ([a]ccept/[r]eject/[S]kip)",
-                                                              valid_values=["accept", "reject", "skip", "a", "r", "s"],
-                                                              default_value="skip")
+                                                              valid_answers=["accept", "reject", "skip", "a", "r", "s"],
+                                                              default_answer="skip")
 
         if _answer in ["accept", "a"]:
             sp_utils.accept_deal_id(deal.deal_id, from_private_key)
@@ -34,6 +34,7 @@ def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
 
 @click.command()
 @click.argument("action", required=False, type=click.Choice(["accept", "reject"], case_sensitive=False))
+# TODO LATER can --private-key be different from --address here?
 def manage_proposed_deals(action: str | None):
     """
     \b

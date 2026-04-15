@@ -36,7 +36,9 @@ def configure_logger():
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
     logging_format = "%(levelname)-10s%(asctime)s %(name)s:%(funcName)-16s: %(message)s"
-    level = logging_level_str_to_int(os.getenv("_FILE_LOGGING_LEVEL"))
+
+    # enforce minimum WARNING level for file logging
+    level = max(logging_level_str_to_int(os.getenv("_FILE_LOGGING_LEVEL")), logging.WARNING)
 
     log_formatter = logging.Formatter(logging_format)
     root_logger = logging.getLogger()
