@@ -1,10 +1,12 @@
 import json
 import logging
 import time
+import eth_abi
 
 import click
 from eth_account.datastructures import SignedTransaction
 from web3 import Web3
+from web3.exceptions import ContractCustomError
 from web3.types import RPCEndpoint
 
 from cli import utils
@@ -75,7 +77,53 @@ class ContractService:
     def _get_class_name(self):
         return self.__class__.__name__
 
-    def _send_signed_tx(self, signed_tx: SignedTransaction, dry_run: bool = False) -> str:
+    def _find_error_in_abi(self, selector: bytes) -> dict | None:
+        for item in self.contract.abi:
+            if item.get('type') != 'error':
+                continue
+            sig = item['name'] + '(' + ','.join(i['type'] for i in item['inputs']) + ')'
+            if self.w3.keccak(text=sig)[:4] == selector:
+                return item
+
+        return None
+
+    def _format_error_args(self, abi_error: dict, arg_data: bytes) -> str:
+        types = [i['type'] for i in abi_error['inputs']]
+        names = [i['name'] for i in abi_error['inputs']]
+        decoded = eth_abi.decode(types, arg_data)
+        return ', '.join(f'{n}={v}' for n, v in zip(names, decoded))
+
+    def _decode_contract_error_name(self, e: ContractCustomError) -> str:
+        data = e.data
+        if not data:
+            return str(e)
+
+        if isinstance(data, str):
+            raw = bytes.fromhex(data.removeprefix("0x"))
+        elif isinstance(data, (bytes, bytearray)):
+            raw = bytes(data)
+        else:
+            return str(e)
+
+        if len(raw) < 4:
+            return str(e)
+
+        hex_data = "0x" + raw.hex()
+        selector, arg_data = raw[:4], raw[4:]
+
+        abi_error = self._find_error_in_abi(selector)
+
+        if not abi_error:
+            return f"UnknownError hex={hex_data}"
+
+        if not abi_error['inputs']:
+            return f"{abi_error['name']}"
+        try:
+            return f"{abi_error['name']}({self._format_error_args(abi_error, arg_data)})"
+        except Exception as err:
+            return f"DecodingError name={abi_error['name']} hex={hex_data} err={str(err)}"
+
+    def _send_tx(self, signed_tx: SignedTransaction, dry_run: bool) -> str:
         if dry_run:
             return "0x" + "00" * 32
 
@@ -104,9 +152,13 @@ class ContractService:
             raise Exception(f"Transaction signing failed: {str(e)}") from e
 
         try:
-            tx_hash = self._send_signed_tx(signed_tx, dry_run)
+            tx_hash = self._send_tx(signed_tx, dry_run)
             self.logger.warning(f"Transaction sent: {tx_hash}: {tx_to_log_string(transaction, tx_params)}")
             return tx_hash
+        except ContractCustomError as e:
+            reason = self._decode_contract_error_name(e)
+            self.logger.error(f"Transaction reverted: {reason}")
+            raise Exception(f"Transaction reverted: {reason}") from e
         except Exception as e:
             self.logger.error(f"Transaction failed: {str(e)}: {tx_to_log_string(transaction, tx_params)}")
             raise Exception(f"Transaction failed: {str(e)}") from e
@@ -151,9 +203,14 @@ class ContractService:
         from_address = self.w3.eth.account.from_key(from_private_key).address
         nonce = ContractService.get_address_nonce(from_address, self.w3)
 
-        # tx_params.data is sensitive info, should never be logged
-        tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce})
+        try:
+            tx_params = transaction.build_transaction({'from': from_address, 'nonce': nonce})
+        except ContractCustomError as e:
+            reason = self._decode_contract_error_name(e)
+            self.logger.error(f"Transaction reverted: {reason}")
+            raise Exception(f"Transaction reverted: {reason}") from e
 
+        self.logger.info(f"Transaction prepared: {transaction.__dict__}")
         _dry_run = is_dry_run()
 
         if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
