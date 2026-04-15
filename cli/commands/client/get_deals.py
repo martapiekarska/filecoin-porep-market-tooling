@@ -1,8 +1,8 @@
 import click
 
 from cli import utils
-from cli.commands.client._client import client_address
 from cli.commands.client import _utils as client_utils
+from cli.commands.client._client import client_address
 from cli.services.contracts.porep_market import PoRepMarketDealState
 
 

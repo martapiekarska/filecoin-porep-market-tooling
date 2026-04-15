@@ -1,7 +1,7 @@
 import os
 
-from cli.services.contracts.contract_service import ContractService, Address
 from cli import utils
+from cli.services.contracts.contract_service import ContractService, Address
 
 
 class ValidatorFactory(ContractService):

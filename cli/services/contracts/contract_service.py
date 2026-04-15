@@ -1,17 +1,18 @@
 import json
-import time
-import click
 import logging
+import time
 
+import click
 from eth_account.datastructures import SignedTransaction
 from web3 import Web3
 from web3.types import RPCEndpoint
+
 from cli import utils
 from cli._cli import is_dry_run
 
 
 class Address(str):
-    ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+    ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
     def __new__(cls, addr: str):
         return super().__new__(cls, str(Web3.to_checksum_address(addr)))
@@ -39,10 +40,10 @@ class Address(str):
 
     @staticmethod
     def is_filecoin_address(addr: str) -> bool:
-        return addr.startswith('f') or addr.startswith('t')
+        return addr.startswith("f") or addr.startswith("t")
 
     @staticmethod
-    def from_filecoin_address(addr: str) -> 'Address':
+    def from_filecoin_address(addr: str) -> "Address":
         if not Address.is_filecoin_address(addr):
             raise ValueError(f"Not a filecoin address: {addr}")
 
@@ -64,10 +65,10 @@ class Address(str):
 
 class ContractService:
     def __init__(self, contract_address: Address | str, contract_abi_path: str, rpc_url=None):
-        rpc_url = rpc_url or utils.get_env('RPC_URL')
+        rpc_url = rpc_url or utils.get_env("RPC_URL")
         self.logger = logging.getLogger(self._get_class_name())
 
-        with open(contract_abi_path, 'r') as abi_file:
+        with open(contract_abi_path, "r", encoding="utf-8") as abi_file:
             contract_abi = json.load(abi_file)
 
             self.w3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -79,14 +80,15 @@ class ContractService:
         return self.__class__.__name__
 
     def _send_tx(self, signed_tx: SignedTransaction, dry_run: bool) -> str:
-        if dry_run: return "0x" + "00" * 32
+        if dry_run:
+            return "0x" + "00" * 32
         return self.w3.eth.send_raw_transaction(signed_tx.raw_transaction).to_0x_hex()
 
     def _sign_and_send_tx(self, transaction, from_private_key: str, dry_run: bool) -> str:
         try:
             signed_tx = self.w3.eth.account.sign_transaction(transaction, from_private_key)
         except Exception as e:
-            raise Exception(f"Transaction signing failed: {str(e)}")
+            raise Exception(f"Transaction signing failed: {str(e)}") from e
 
         try:
             tx_hash = self._send_tx(signed_tx, dry_run)
@@ -94,48 +96,48 @@ class ContractService:
             return tx_hash
         except Exception as e:
             self.logger.error(f"Transaction failed: {transaction}: {str(e)}")
-            raise Exception(f"Transaction failed: {str(e)}")
+            raise Exception(f"Transaction failed: {str(e)}") from e
 
     @staticmethod
     def get_address_nonce(from_address: Address, w3: Web3) -> int:
         try:
-            latest_nonce = w3.eth.get_transaction_count(from_address, 'latest')
-            pending_nonce = w3.eth.get_transaction_count(from_address, 'pending')
+            latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
+            pending_nonce = w3.eth.get_transaction_count(from_address, "pending")
 
             while pending_nonce > latest_nonce:
                 while pending_nonce > latest_nonce:
                     # update pending_nonce loop
                     click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
-                    latest_nonce = w3.eth.get_transaction_count(from_address, 'latest')
+                    latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
 
                     time.sleep(3)
 
                 # update pending_nonce loop
-                pending_nonce = w3.eth.get_transaction_count(from_address, 'pending')
+                pending_nonce = w3.eth.get_transaction_count(from_address, "pending")
 
             return pending_nonce
 
         except Exception as e:
-            raise Exception(f"Failed to get nonce for address {from_address}: {str(e)}")
+            raise Exception(f"Failed to get nonce for address {from_address}: {str(e)}") from e
 
-    def sign_and_send_tx(self, _transaction, from_private_key: str) -> str:
+    def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
         from_address = self.w3.eth.account.from_key(from_private_key).address
         nonce = ContractService.get_address_nonce(from_address, self.w3)
-        transaction = _transaction.build_transaction({'from': from_address, 'nonce': nonce})
+        _transaction = transaction.build_transaction({"from": from_address, "nonce": nonce})
 
-        self.logger.info(f"Transaction prepared: {_transaction.__dict__}")
+        self.logger.info(f"Transaction prepared: {transaction.__dict__}")
         _dry_run = is_dry_run()
 
         if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
-                                      f"== From: {transaction['from']}\n"
-                                      f"== To: {transaction['to']}\n"
-                                      f"== Signature: {_transaction.signature}\n"
-                                      f"== Args: {_transaction.args}\n"
+                                      f"== From: {_transaction['from']}\n"
+                                      f"== To: {_transaction['to']}\n"
+                                      f"== Signature: {transaction.signature}\n"
+                                      f"== Args: {transaction.args}\n"
                                       f"== Gas Price: {self.w3.eth.gas_price} wei\n"
-                                      f"== Gas: {transaction['gas']}\n"
-                                      f"== Value: {transaction['value']} wei\n"
+                                      f"== Gas: {_transaction['gas']}\n"
+                                      f"== Value: {_transaction['value']} wei\n"
                                       f"This is the final confirmation", default_answer=_dry_run):
             _dry_run = True
 
         click.echo()
-        return self._sign_and_send_tx(transaction, from_private_key, _dry_run)
+        return self._sign_and_send_tx(_transaction, from_private_key, _dry_run)

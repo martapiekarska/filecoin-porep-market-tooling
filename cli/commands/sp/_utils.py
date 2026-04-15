@@ -11,7 +11,7 @@ def get_sp_deals(state: PoRepMarketDealState, organization_address: Address) -> 
 
 
 def accept_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | None:
-    if deal.state != PoRepMarketDealState.Proposed:
+    if deal.state != PoRepMarketDealState.PROPOSED:
         click.echo(f"Deal id {deal.deal_id} is not in Proposed state, current state: {deal.state}")
         return
 
@@ -24,7 +24,7 @@ def accept_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | N
 
 
 def reject_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | None:
-    if deal.state != PoRepMarketDealState.Proposed:
+    if deal.state != PoRepMarketDealState.PROPOSED:
         click.echo(f"Deal id {deal.deal_id} is not in Proposed state, current state: {deal.state}")
         return
 

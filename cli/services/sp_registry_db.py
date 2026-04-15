@@ -1,8 +1,9 @@
-from datetime import datetime
-from cli import utils
-
 import json
+from datetime import datetime
+
 import psycopg
+
+from cli import utils
 
 
 @utils.json_dataclass()
@@ -36,7 +37,7 @@ class SPRegistryDBProvider:
     sp_software: list[str]
 
     @staticmethod
-    def from_db(data) -> 'SPRegistryDBProvider':
+    def from_db(data) -> "SPRegistryDBProvider":
         return SPRegistryDBProvider(
             id=data[0],
             name=data[1],
@@ -55,7 +56,7 @@ class SPRegistryDBProvider:
             kyc_session_id=data[14],
             kyc_session_url=data[15],
             kyc_status=data[16],
-            kyc_completed_at=f'{data[17]}',
+            kyc_completed_at=f"{data[17]}",
             created_at=data[18],
             updated_at=data[19],
             geographical_location=data[20],
@@ -72,7 +73,7 @@ class SPRegistryDB:
     def __init__(self, db_url: str):
         self.db_url = db_url
 
-    def get_providers(self, kyc_status: str = None, id: int = None) -> list[SPRegistryDBProvider]:
+    def get_providers(self, kyc_status: str = None, provider_id: int = None) -> list[SPRegistryDBProvider]:
         query = "SELECT * FROM providers WHERE true"
         params = []
 
@@ -80,9 +81,9 @@ class SPRegistryDB:
             query += " AND kyc_status = %s"
             params.append(kyc_status)
 
-        if id is not None:
+        if provider_id is not None:
             query += " AND id = %s"
-            params.append(id)
+            params.append(provider_id)
 
         with psycopg.connect(self.db_url) as conn:
             providers = [

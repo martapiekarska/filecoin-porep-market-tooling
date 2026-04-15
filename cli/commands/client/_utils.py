@@ -1,8 +1,9 @@
 import time
-import click
 
+import click
 from eth_account.datastructures import SignedMessage
 from web3.auto import w3
+
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState
@@ -16,7 +17,8 @@ def get_client_deals(client_address: str, state: PoRepMarketDealState = None) ->
 
 # TODO verify this, check for precision loss
 def calculate_deposit_amount_for_deal(deal: PoRepMarketDealProposal, deposit_for_months: int) -> int:
-    if deposit_for_months <= 0: raise Exception(f"Deposit for months must be greater than 0")
+    if deposit_for_months <= 0:
+        raise Exception("Deposit for months must be greater than 0")
 
     deal_size_bytes = deal.terms.deal_size_bytes
     deal_size_sectors = deal_size_bytes / (32 * 1024 ** 2)
@@ -33,26 +35,26 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
 
     signed_msg = w3.eth.account.sign_typed_data(
         domain_data={
-            'name': token_name,
-            'version': "1",
-            'chainId': commands_utils.get_chain_id(),
-            'verifyingContract': utils.get_env('USDC_TOKEN')
+            "name": token_name,
+            "version": "1",
+            "chainId": commands_utils.get_chain_id(),
+            "verifyingContract": utils.get_env("USDC_TOKEN")
         },
         message_types={
-            'Permit': [
-                {'name': "owner", 'type': "address"},
-                {'name': "spender", 'type': "address"},
-                {'name': "value", 'type': "uint256"},
-                {'name': "nonce", 'type': "uint256"},
-                {'name': "deadline", 'type': "uint256"},
+            "Permit": [
+                {"name": "owner", "type": "address"},
+                {"name": "spender", "type": "address"},
+                {"name": "value", "type": "uint256"},
+                {"name": "nonce", "type": "uint256"},
+                {"name": "deadline", "type": "uint256"},
             ]
         },
         message_data={
-            'owner': from_address,
-            'spender': utils.get_env('FILECOIN_PAY'),
-            'value': amount,
-            'nonce': USDCToken().nonces(from_address),
-            'deadline': permit_deadline
+            "owner": from_address,
+            "spender": utils.get_env("FILECOIN_PAY"),
+            "value": amount,
+            "nonce": USDCToken().nonces(from_address),
+            "deadline": permit_deadline
         }, private_key=from_private_key)
 
     if not signed_msg.v or not signed_msg.r or not signed_msg.s or not signed_msg.signature:

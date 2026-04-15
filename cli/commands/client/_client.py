@@ -1,6 +1,6 @@
 import click
-
 from web3.auto import w3
+
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.contract_service import Address
@@ -10,9 +10,9 @@ CLIENT_PRIVATE_KEY: str | None = None
 
 
 @click.group()
-@click.option('--address', help="Client address to use, default is address from --private-key option.")
-@click.option('--private-key', envvar='CLIENT_PRIVATE_KEY', help="Client private key to use.", show_envvar=True)
-@click.option('--info', help="Confirm current info before executing command.", is_flag=True, default=False, show_default=True)
+@click.option("--address", help="Client address to use, default is address from --private-key option.")
+@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", help="Client private key to use.", show_envvar=True)
+@click.option("--info", help="Confirm current info before executing command.", is_flag=True, default=False, show_default=True)
 def client(address: Address = None, private_key: str = None, info: bool = False):
     """
     Client commands for interacting with the PoRep Market.
@@ -30,7 +30,9 @@ def client(address: Address = None, private_key: str = None, info: bool = False)
 
 
 def client_address() -> Address:
-    if not CLIENT_ADDRESS: raise Exception("Client address is not set")
+    if not CLIENT_ADDRESS:
+        raise Exception("Client address is not set")
+
     return CLIENT_ADDRESS
 
 
@@ -48,7 +50,7 @@ def _info():
 
 
 @click.command()
-@click.option('--test-keys', is_flag=True, help="Fail if the private key does not matches provided address.", default=False, show_default=True)
+@click.option("--test-keys", is_flag=True, help="Fail if the private key does not matches provided address.", default=False, show_default=True)
 def info(test_keys: bool = False):
     """
     Display the current client info.

@@ -1,7 +1,7 @@
-import enum
-import os
-import json
 import dataclasses
+import enum
+import json
+import os
 
 from dotenv import load_dotenv
 
@@ -18,28 +18,29 @@ def get_env(name, required=True, default=None):
 
     if required:
         if not value:
-            raise Exception(f'Environment variable {name} is not set, see .env file (copy from .env.example)')
+            raise Exception(f"Environment variable {name} is not set, see .env file (copy from .env.example)")
 
     return value
 
 
 def string_to_bool(value: str) -> bool | None:
-    if value is None: return None
+    if value is None:
+        return None
     value = value.strip().lower()
 
-    if value in ['true', '1', 'yes', 'y']:
+    if value in ["true", "1", "yes", "y"]:
         return True
-    elif value in ['false', '0', 'no', 'n']:
+    elif value in ["false", "0", "no", "n"]:
         return False
     else:
-        raise ValueError(f'Cannot convert string to bool: {value}')
+        raise ValueError(f"Unknown boolean value: {value}")
 
 
 def ask_user_string(prompt: str, default_value=None, valid_values=None):
-    default_str = f' (default: {default_value})' if default_value else ''
+    default_str = f" (default: {default_value})" if default_value else ""
 
     while True:
-        answer = input(f'{prompt}{default_str}: ').strip()
+        answer = input(f"{prompt}{default_str}: ").strip()
 
         if not answer and default_value is not None:
             return default_value
@@ -51,20 +52,20 @@ def ask_user_string(prompt: str, default_value=None, valid_values=None):
 
 def ask_user_confirm_or_fail(prompt: str, default_answer=False):
     if not ask_user_confirm(prompt, default_answer):
-        raise Exception('Operation cancelled by user')
+        raise Exception("Operation cancelled by user")
 
 
 def ask_user_confirm(prompt: str, default_answer=False):
-    default_str = 'Y/n' if default_answer else 'y/n' if default_answer is None else 'y/N'
+    default_str = "Y/n" if default_answer else "y/n" if default_answer is None else "y/N"
 
     while True:
-        answer = input(f'{prompt} ({default_str}) ').strip().lower()
+        answer = input(f"{prompt} ({default_str}) ").strip().lower()
 
-        if answer == '' and default_answer is not None:
+        if answer == "" and default_answer is not None:
             return default_answer
-        elif answer in ['y', 'yes']:
+        elif answer in ["y", "yes"]:
             return True
-        elif answer in ['n', 'no']:
+        elif answer in ["n", "no"]:
             return False
         else:
             continue
@@ -91,7 +92,7 @@ def json_pretty(json_data):
     def _json_pretty(data):
         if issubclass(type(data), enum.Enum):
             return data.name
-        if hasattr(data, '__dict__') and data.__dict__:
+        if hasattr(data, "__dict__") and data.__dict__:
             return _json_pretty(data.__dict__)
         if isinstance(data, list):
             return [_json_pretty(item) for item in data]
@@ -112,15 +113,17 @@ def from_tokens(amount: int, decimals: int):
 
 
 def int_to_bytes(x: int, size: int = 32) -> bytes:
-    if x < 0: raise ValueError("Cannot convert negative integer to bytes")
-    return x.to_bytes(size, 'big')
+    if x < 0:
+        raise ValueError("Cannot convert negative integer to bytes")
+    return x.to_bytes(size, "big")
 
 
 def int_from_bytes(xbytes: bytes) -> int:
-    return int.from_bytes(xbytes, 'big')
+    return int.from_bytes(xbytes, "big")
 
 
 def private_key_to_log_string(private_key: str) -> str:
-    if len(private_key) < 10: return "*" * len(private_key)
+    if len(private_key) < 10:
+        return "*" * len(private_key)
 
     return f"{private_key[:6]}...{private_key[-4:]}"

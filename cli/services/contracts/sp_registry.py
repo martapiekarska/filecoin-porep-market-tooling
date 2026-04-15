@@ -1,7 +1,7 @@
 import os
 
-from cli.services.contracts.contract_service import ContractService, Address
 from cli import utils
+from cli.services.contracts.contract_service import ContractService, Address
 
 
 @utils.json_dataclass()
@@ -36,7 +36,7 @@ class SPRegistryProviderInfo(SPRegistryProvider):
     blocked: bool
 
     @staticmethod
-    def from_array(provider_id, data) -> 'SPRegistryProviderInfo':
+    def from_array(provider_id, data) -> "SPRegistryProviderInfo":
         return SPRegistryProviderInfo(
             provider_id=provider_id,
             organization_address=data[0],
@@ -60,23 +60,23 @@ class SPRegistryProviderInfo(SPRegistryProvider):
 
 class SPRegistry(ContractService):
     def __init__(self, contract_address: Address | str = None):
-        super().__init__(contract_address if contract_address else utils.get_env('SP_REGISTRY'),
-                         os.path.dirname(os.path.realpath(__file__)) + '/abi/SPRegistry.json')
+        super().__init__(contract_address if contract_address else utils.get_env("SP_REGISTRY"),
+                         os.path.dirname(os.path.realpath(__file__)) + "/abi/SPRegistry.json")
 
     # @notice Register a provider with full configuration in one call
     # @dev Admin convenience function for testnet onboarding. NOT in ISPRegistry interface.
     def register_provider_for(self, provider: SPRegistryProvider, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.registerProviderFor(
-                                         provider.provider_id,
-                                         provider.organization_address,
-                                         (provider.capabilities.retrievability_bps, provider.capabilities.bandwidth_mbps, provider.capabilities.latency_ms,
-                                          provider.capabilities.indexing_pct),
-                                         provider.available_bytes,
-                                         provider.price_per_sector_per_month,
-                                         provider.payee_address,
-                                         provider.min_deal_duration_days,
-                                         provider.max_deal_duration_days
-                                     ), from_private_key)
+            provider.provider_id,
+            provider.organization_address,
+            (provider.capabilities.retrievability_bps, provider.capabilities.bandwidth_mbps, provider.capabilities.latency_ms,
+             provider.capabilities.indexing_pct),
+            provider.available_bytes,
+            provider.price_per_sector_per_month,
+            provider.payee_address,
+            provider.min_deal_duration_days,
+            provider.max_deal_duration_days
+        ), from_private_key)
 
     # @notice Check if a provider is registered
     # @param provider_id The provider actor ID
@@ -112,44 +112,43 @@ class SPRegistry(ContractService):
     # @param max_deal_duration_days Maximum deal duration in days (0 = no maximum)
     def set_deal_duration_limits(self, provider_id: int, min_deal_duration_days: int, max_deal_duration_days: int, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.setDealDurationLimits(
-                                         provider_id,
-                                         min_deal_duration_days,
-                                         max_deal_duration_days
-                                     ), from_private_key)
+            provider_id,
+            min_deal_duration_days,
+            max_deal_duration_days
+        ), from_private_key)
 
     # @notice Update provider's available storage capacity
     # @param provider_id The provider to update
     # @param available_bytes New available capacity in bytes
     def update_available_space(self, provider_id: int, available_bytes: int, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.updateAvailableSpace(
-                                         provider_id,
-                                         available_bytes
-                                     ), from_private_key)
-
+            provider_id,
+            available_bytes
+        ), from_private_key)
 
     # @notice Set SLI capabilities for a provider
     # @param provider_id The provider to update
     # @param capabilities The SLI capabilities this provider guarantees
     def set_capabilities(self, provider_id: int, capabilities: SPRegistrySLIThresholds, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.setCapabilities(
-                                         provider_id,
-                                         (capabilities.retrievability_bps, capabilities.bandwidth_mbps, capabilities.latency_ms, capabilities.indexing_pct)
-                                     ), from_private_key)
+            provider_id,
+            (capabilities.retrievability_bps, capabilities.bandwidth_mbps, capabilities.latency_ms, capabilities.indexing_pct)
+        ), from_private_key)
 
     # @notice Set the monthly price per sector for a provider
     # @param provider_id The provider to update
     # @param price_per_sector_per_month The monthly ERC20 token price per 32 GiB sector in smallest units (0 to disable auto-approve)
     def set_price(self, provider_id: int, price_per_sector_per_month: int, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.setPrice(
-                                         provider_id,
-                                         price_per_sector_per_month
-                                     ), from_private_key)
+            provider_id,
+            price_per_sector_per_month
+        ), from_private_key)
 
     # @notice Set the payment recipient address for a provider
     # @param provider_id The provider to update
     # @param payee_address The address that will receive payments for this provider
     def set_payee(self, provider_id: int, payee_address: Address, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.setPayee(
-                                         provider_id,
-                                         payee_address
-                                     ), from_private_key)
+            provider_id,
+            payee_address
+        ), from_private_key)

@@ -1,36 +1,36 @@
 import os
-
 from enum import Enum
+
+from cli import utils
 from cli.services.contracts.contract_service import ContractService, Address
 from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
-from cli import utils
 
 
 # @notice DealState enum
 # @dev Represents the various states a deal can be
 class PoRepMarketDealState(Enum):
-    Proposed = 0
-    Accepted = 1
-    Completed = 2
-    Rejected = 3
-    Terminated = 4
+    PROPOSED = 0
+    ACCEPTED = 1
+    COMPLETED = 2
+    REJECTED = 3
+    TERMINATED = 4
 
     @staticmethod
     def from_string(s: str):
-        s = s.lower()
+        s = s.strip().lower()
 
-        if s == 'proposed':
-            return PoRepMarketDealState.Proposed
-        elif s == 'accepted':
-            return PoRepMarketDealState.Accepted
-        elif s == 'completed':
-            return PoRepMarketDealState.Completed
-        elif s == 'rejected':
-            return PoRepMarketDealState.Rejected
-        elif s == 'terminated':
-            return PoRepMarketDealState.Terminated
+        if s == "proposed":
+            return PoRepMarketDealState.PROPOSED
+        elif s == "accepted":
+            return PoRepMarketDealState.ACCEPTED
+        elif s == "completed":
+            return PoRepMarketDealState.COMPLETED
+        elif s == "rejected":
+            return PoRepMarketDealState.REJECTED
+        elif s == "terminated":
+            return PoRepMarketDealState.TERMINATED
         else:
-            raise Exception(f'Invalid deal state: {s}')
+            raise Exception(f"Invalid deal state: {s}")
 
     @staticmethod
     def to_string_list():
@@ -81,9 +81,8 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
         self.client_address = Address(self.client_address)
         self.validator_address = Address(self.validator_address)
 
-
     @staticmethod
-    def from_array(data) -> 'PoRepMarketDealProposal':
+    def from_array(data) -> "PoRepMarketDealProposal":
         return PoRepMarketDealProposal(
             deal_id=data[0],
             client_address=data[1],
@@ -108,16 +107,16 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
 
 class PoRepMarket(ContractService):
     def __init__(self, contract_address: Address | str = None):
-        super().__init__(contract_address if contract_address else utils.get_env('POREP_MARKET'),
-                         os.path.dirname(os.path.realpath(__file__)) + '/abi/PoRepMarket.json')
+        super().__init__(contract_address if contract_address else utils.get_env("POREP_MARKET"),
+                         os.path.dirname(os.path.realpath(__file__)) + "/abi/PoRepMarket.json")
 
     # @notice Proposes a deal
     def propose_deal(self, deal: PoRepMarketDealRequest, from_private_key: str) -> str:
         return self.sign_and_send_tx(self.contract.functions.proposeDeal(
-                                         (deal.requirements.retrievability_bps, deal.requirements.bandwidth_mbps, deal.requirements.latency_ms, deal.requirements.indexing_pct),
-                                         (deal.terms.deal_size_bytes, deal.terms.price_per_sector_per_month, deal.terms.duration_days),
-                                         deal.manifest_location
-                                     ), from_private_key)
+            (deal.requirements.retrievability_bps, deal.requirements.bandwidth_mbps, deal.requirements.latency_ms, deal.requirements.indexing_pct),
+            (deal.terms.deal_size_bytes, deal.terms.price_per_sector_per_month, deal.terms.duration_days),
+            deal.manifest_location
+        ), from_private_key)
 
     # @notice Gets a deal proposal
     # @param deal_id The id of the deal proposal
@@ -126,10 +125,10 @@ class PoRepMarket(ContractService):
         deal = self.contract.functions.getDealProposal(deal_id).call()
 
         if not Address(deal[1]):
-            raise Exception(f'Deal proposal with id {deal_id} does not exist')
+            raise Exception(f"Deal proposal with id {deal_id} does not exist")
 
         if deal_id != deal[0]:
-            raise Exception(f'Invalid deal proposal returned from contract. Expected deal_id {deal_id}, got {deal[0]}')
+            raise Exception(f"Invalid deal proposal returned from contract. Expected deal_id {deal_id}, got {deal[0]}")
 
         return PoRepMarketDealProposal.from_array(deal)
 
@@ -138,7 +137,8 @@ class PoRepMarket(ContractService):
     # @param state The state of the deals to retrieve
     # @return deals Array of deal proposals for the organization in the specified state (from all providers associated with the organization)
     def get_deals_for_organization_by_state(self, organization_address: Address, state: PoRepMarketDealState) -> list[PoRepMarketDealProposal]:
-        return [PoRepMarketDealProposal.from_array(deal) for deal in self.contract.functions.getDealsForOrganizationByState(organization_address, state.value).call()]
+        return [PoRepMarketDealProposal.from_array(deal) for deal in
+                self.contract.functions.getDealsForOrganizationByState(organization_address, state.value).call()]
 
     # @notice Accepts a deal
     # @param dealId The id of the deal proposal

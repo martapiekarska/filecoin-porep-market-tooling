@@ -1,8 +1,8 @@
 import click
 
 from cli import utils
-from cli.services.contracts.porep_market import PoRepMarketDealState
 from cli.commands import utils as commands_utils
+from cli.services.contracts.porep_market import PoRepMarketDealState
 
 
 @click.command()

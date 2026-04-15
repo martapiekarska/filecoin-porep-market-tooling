@@ -1,10 +1,10 @@
 import click
 
+from cli import utils
 from cli.commands.client._client import client_address
 from cli.services.contracts.contract_service import Address
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
-from cli import utils
 
 
 def _get_filecoin_pay_account(owner_address: Address, token_address: Address):
@@ -21,7 +21,7 @@ def _get_filecoin_pay_account(owner_address: Address, token_address: Address):
 
 
 @click.command()
-@click.option('--token-address', envvar='USDC_TOKEN', show_envvar=True, help="ERC20 token address to ask for.", required=True)
+@click.option("--token-address", envvar="USDC_TOKEN", show_envvar=True, help="ERC20 token address to ask for.", required=True)
 def get_filecoin_pay_account(token_address: Address):
     """
     Get client's FileCoinPay account for the organization and token address.

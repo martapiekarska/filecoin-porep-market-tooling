@@ -1,7 +1,7 @@
 import os
 
-from cli.services.contracts.contract_service import ContractService, Address
 from cli import utils
+from cli.services.contracts.contract_service import ContractService, Address
 
 
 @utils.json_dataclass()
@@ -12,7 +12,7 @@ class FileCoinPayAccount:
     lockup_last_settled_at: int  # epoch up to and including which lockup has been settled for the account
 
     @staticmethod
-    def from_array(data) -> 'FileCoinPayAccount':
+    def from_array(data) -> "FileCoinPayAccount":
         return FileCoinPayAccount(
             funds=data[0],
             lockup_current=data[1],
@@ -31,7 +31,7 @@ class FileCoinPayOperatorApproval:
     max_lockup_period: int
 
     @staticmethod
-    def from_array(data) -> 'FileCoinPayOperatorApproval':
+    def from_array(data) -> "FileCoinPayOperatorApproval":
         return FileCoinPayOperatorApproval(
             is_approved=data[0],
             rate_allowance=data[1],
@@ -44,8 +44,8 @@ class FileCoinPayOperatorApproval:
 
 class FileCoinPay(ContractService):
     def __init__(self, contract_address: Address | str = None):
-        super().__init__(contract_address if contract_address else utils.get_env('FILECOIN_PAY'),
-                         os.path.dirname(os.path.realpath(__file__)) + '/abi/FileCoinPay.json')
+        super().__init__(contract_address if contract_address else utils.get_env("FILECOIN_PAY"),
+                         os.path.dirname(os.path.realpath(__file__)) + "/abi/FileCoinPay.json")
 
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction,
     #         while also setting operator approval.

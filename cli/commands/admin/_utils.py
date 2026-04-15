@@ -4,7 +4,7 @@ from cli.services.contracts.sp_registry import SPRegistryProvider, SPRegistrySLI
 from cli.services.sp_registry_db import SPRegistryDB
 
 
-def get_db_sps(db_url: str, kyc_status: str = None, id: int = None) -> list[SPRegistryProvider]:
+def get_db_sps(db_url: str, kyc_status: str = None, provider_id: int = None) -> list[SPRegistryProvider]:
     # TODO
     def retrievability_guarantees_to_bps(guarantees: list[str]) -> int:
         def _retrievability_guarantee_to_bps(guarantee: str) -> int:
@@ -43,22 +43,26 @@ def get_db_sps(db_url: str, kyc_status: str = None, id: int = None) -> list[SPRe
 
         return int(result)
 
-    organizations = SPRegistryDB(db_url).get_providers(kyc_status, id)
+    organizations = SPRegistryDB(db_url).get_providers(kyc_status, provider_id)
     result: list[SPRegistryProvider] = []
 
     for org in organizations:
         if org.deal_duration_max_months * 30 > 1278:
             if not utils.ask_user_confirm(
-                f"Provider {org.id} has max deal duration of {org.deal_duration_max_months} months, "
-                f"which exceeds the SPRegistry contract limit of 1278 days (42 months). It will be truncated to 1278 days. Return this provider?",
-                default_answer=True): continue
+                    f"Provider {org.id} has max deal duration of {org.deal_duration_max_months} months, "
+                    f"which exceeds the SPRegistry contract limit of 1278 days (42 months). It will be truncated to 1278 days. "
+                    f"Return this provider?",
+                    default_answer=True):
+                continue
 
         if Address.is_filecoin_address(org.organization_address):
             # organization_address = Address.from_filecoin_address(org.organization_address)
             organization_address = "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951"  # TODO
             if not utils.ask_user_confirm(
-                f"Converted provider {org.id} Filecoin organization_address {org.organization_address} to EVM address {organization_address}. Return this provider?",
-                default_answer=True): continue
+                    f"Converted provider {org.id} Filecoin organization_address {org.organization_address} to EVM address {organization_address}. "
+                    f"Return this provider?",
+                    default_answer=True):
+                continue
 
         else:
             organization_address = org.organization_address

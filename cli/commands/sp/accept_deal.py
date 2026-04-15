@@ -1,7 +1,7 @@
 import click
 
-from cli.commands.sp._sp import sp_private_key
 from cli.commands.sp import _utils as sp_utils
+from cli.commands.sp._sp import sp_private_key
 
 
 @click.command()
