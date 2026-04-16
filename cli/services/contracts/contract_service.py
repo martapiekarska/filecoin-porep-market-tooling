@@ -128,7 +128,7 @@ class ContractService:
                 while pending_nonce > latest_nonce:
                     # update pending_nonce loop
                     click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
-                    # TODO ASAP try catch around this
+                    # TODO LATER timeout for fetching nonce
                     latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
 
                     time.sleep(3)

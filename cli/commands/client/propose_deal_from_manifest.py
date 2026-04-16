@@ -78,7 +78,7 @@ def _propose_deal_from_manifest(manifest_url: str,
 
     pieces_size_bytes = sum(piece["pieceSize"] for piece in pieces)
 
-    # TODO ASAP validate params here?
+    # TODO LATER validate params here?
 
     if pieces_size_bytes <= 0:
         raise Exception("Invalid deal size")
