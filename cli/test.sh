@@ -21,82 +21,82 @@ set +a
 
 (
   # misc tests
-  "${CLI_PATH}"             >/dev/null &&
-  "${CLI_PATH}" info --help >/dev/null &&
+  python3 "${CLI_PATH}"             >/dev/null &&
+  python3 "${CLI_PATH}" info --help >/dev/null &&
 
-  "${CLI_PATH}" admin --address "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                           >/dev/null &&
-  "${CLI_PATH}" admin --private-key "b73163861add8c8280f62958432131b7a5e69a9276a3cfa26fcaa92ff356fadc" info >/dev/null &&
-  "${CLI_PATH}" admin get-deals --help>/dev/null &&
+  python3 "${CLI_PATH}" admin --address "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                           >/dev/null &&
+  python3 "${CLI_PATH}" admin --private-key "b73163861add8c8280f62958432131b7a5e69a9276a3cfa26fcaa92ff356fadc" info >/dev/null &&
+  python3 "${CLI_PATH}" admin get-deals --help>/dev/null &&
 
   # admin tests
-  "${CLI_PATH}" admin get-deals proposed         >/dev/null &&
-  "${CLI_PATH}" admin get-devnet-sps             >/dev/null &&
-  "${CLI_PATH}" admin get-registered-sps         >/dev/null &&
-  "${CLI_PATH}" admin get-db-sps --help          >/dev/null &&
-  "${CLI_PATH}" admin register-db-sps --help     >/dev/null &&
-  "${CLI_PATH}" admin register-devnet-sps --help >/dev/null &&
+  python3 "${CLI_PATH}" admin get-deals proposed         >/dev/null &&
+  python3 "${CLI_PATH}" admin get-devnet-sps             >/dev/null &&
+  python3 "${CLI_PATH}" admin get-registered-sps         >/dev/null &&
+  python3 "${CLI_PATH}" admin get-db-sps --help          >/dev/null &&
+  python3 "${CLI_PATH}" admin register-db-sps --help     >/dev/null &&
+  python3 "${CLI_PATH}" admin register-devnet-sps --help >/dev/null &&
 
   # client tests
-  "${CLI_PATH}" client get-deals rejected                >/dev/null &&
-  "${CLI_PATH}" client get-filecoin-pay-account          >/dev/null &&
-  "${CLI_PATH}" client init-accepted-deals --help        >/dev/null &&
-  "${CLI_PATH}" client deposit-for-all-deals --help      >/dev/null &&
-  "${CLI_PATH}" client propose-deal-from-manifest --help >/dev/null &&
+  python3 "${CLI_PATH}" client get-deals rejected                >/dev/null &&
+  python3 "${CLI_PATH}" client get-filecoin-pay-account          >/dev/null &&
+  python3 "${CLI_PATH}" client init-accepted-deals --help        >/dev/null &&
+  python3 "${CLI_PATH}" client deposit-for-all-deals --help      >/dev/null &&
+  python3 "${CLI_PATH}" client propose-deal-from-manifest --help >/dev/null &&
 
   # sp tests
-  "${CLI_PATH}" sp get-deals accepted           >/dev/null &&
-  "${CLI_PATH}" sp accept-deal --help           >/dev/null &&
-  "${CLI_PATH}" sp reject-deal --help           >/dev/null &&
-  "${CLI_PATH}" sp manage-proposed-deals --help >/dev/null &&
+  python3 "${CLI_PATH}" sp get-deals accepted           >/dev/null &&
+  python3 "${CLI_PATH}" sp accept-deal --help           >/dev/null &&
+  python3 "${CLI_PATH}" sp reject-deal --help           >/dev/null &&
+  python3 "${CLI_PATH}" sp manage-proposed-deals --help >/dev/null &&
 
-  ! ("${CLI_PATH}" sp accept-deal 4242 >/dev/null 2>&1) &&
+  ! (python3 "${CLI_PATH}" sp accept-deal 4242 >/dev/null 2>&1) &&
 
   # test keys
 
   # not matching keys but info command should work
   (ADMIN_PRIVATE_KEY="75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" \
-    "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info >/dev/null) &&
+    python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info >/dev/null) &&
 
-  "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info >/dev/null &&
+  python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info >/dev/null &&
 
   # not matching keys but get commands should work
   (CLIENT_PRIVATE_KEY="75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" \
-    "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null) &&  # not matching with env
+    python3 "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null) &&  # not matching with env
 
-  "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" get-deals >/dev/null &&
+  python3 "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" get-deals >/dev/null &&
 
   # matching keys
-  "${CLI_PATH}" admin --address "0x4300EbD613b8E965A81B54aCdF1fA843758420DA" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null &&
-  "${CLI_PATH}" admin --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null &&
+  python3 "${CLI_PATH}" admin --address "0x4300EbD613b8E965A81B54aCdF1fA843758420DA" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null &&
+  python3 "${CLI_PATH}" admin --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null &&
 
   (ADMIN_PRIVATE_KEY="75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" \
-    "${CLI_PATH}" admin --address "0x4300EbD613b8E965A81B54aCdF1fA843758420DA" info --test-keys >/dev/null) &&
+    python3 "${CLI_PATH}" admin --address "0x4300EbD613b8E965A81B54aCdF1fA843758420DA" info --test-keys >/dev/null) &&
 
   (ADMIN_PRIVATE_KEY="75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" \
-    "${CLI_PATH}" admin info --test-keys >/dev/null) &&
+    python3 "${CLI_PATH}" admin info --test-keys >/dev/null) &&
 
   # fail when no matching keys
   ! (ADMIN_PRIVATE_KEY="75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" \
-    "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info --test-keys >/dev/null 2>&1) &&
+    python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info --test-keys >/dev/null 2>&1) &&
 
-  ! ("${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null 2>&1) &&
+  ! (python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" --private-key "75d5bb290fb82d5b86a0a73b30e8e6dfb74d694f565a13f163d87d4370067729" info --test-keys >/dev/null 2>&1) &&
 
   # fail when no keys provided
   ! (ADMIN_PRIVATE_KEY="" \
-    "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info --test-keys >/dev/null 2>&1) &&
+    python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" info --test-keys >/dev/null 2>&1) &&
 
   ! (ADMIN_PRIVATE_KEY="" \
-    "${CLI_PATH}" admin info --test-keys >/dev/null 2>&1) &&
+    python3 "${CLI_PATH}" admin info --test-keys >/dev/null 2>&1) &&
 
   # dont fail when no keys provided for get commands
   ADMIN_PRIVATE_KEY="" \
-    "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null &&
+    python3 "${CLI_PATH}" admin --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null &&
 
   CLIENT_PRIVATE_KEY="" \
-    "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null &&
+    python3 "${CLI_PATH}" client --address "0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E" get-deals >/dev/null &&
 
   ADMIN_PRIVATE_KEY="" \
-    "${CLI_PATH}" admin get-deals >/dev/null &&
+    python3 "${CLI_PATH}" admin get-deals >/dev/null &&
 
   echo "All tests passed"
 ) || {
