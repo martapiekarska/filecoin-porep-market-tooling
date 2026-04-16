@@ -10,7 +10,7 @@ Developed for admins, clients, and SPs to **manage their market interactions** f
 
 ```bash
 python3 -m pip install -r requirements.txt
-cp .env.example .env
+cp .env.mainnet .env
 ```
 
 ## Running the CLI
