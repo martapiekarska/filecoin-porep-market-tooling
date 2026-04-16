@@ -18,6 +18,19 @@ cp .env.example .env
 Make sure you have the required environment variables (see `.env`). \
 Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
+## SP cron automation (non-interactive)
+
+There is a cron-friendly helper script for SPs that can optionally accept pending deals and print a readiness report:
+
+```bash
+python3 ./tools/sp_cron_manage_deals.py
+```
+
+Recommended defaults:
+
+- Keep `DRY_RUN=true` until you are confident everything is configured correctly
+- Set `AUTO_ACCEPT=true` only if you want this script to broadcast `acceptDeal()` transactions automatically
+
 ## Important notes
 
 - The app **does not store any state** locally - all state is retrieved from the blockchain by the design.
