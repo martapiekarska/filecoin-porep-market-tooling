@@ -2,13 +2,14 @@ import click
 from web3.auto import w3
 
 from cli import utils
+from cli.commands import utils as commands_utils
 from cli.commands.sp import _utils as sp_utils
 from cli.commands.sp._sp import sp_private_key
 
 
 def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
     from_address = w3.eth.account.from_key(from_private_key).address
-    deals = sp_utils.get_organization_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
+    deals = commands_utils.get_all_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
 
     click.echo(f"Found {len(deals)} proposed deals.")
 

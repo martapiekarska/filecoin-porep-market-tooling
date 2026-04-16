@@ -12,7 +12,7 @@ from cli.services.contracts.usdc_token import USDCToken
 
 
 def get_client_deals(client_address: str, state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
-    all_deals = commands_utils.get_all_deals(state)
+    all_deals = commands_utils.get_all_deals(state=state)
     return [deal for deal in all_deals if deal.client_address == client_address]
 
 

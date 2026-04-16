@@ -6,7 +6,6 @@ from cli import utils
 from cli._cli import is_dry_run
 from cli.services.contracts.contract_service import Address
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealProposal, PoRepMarket
-from cli.services.contracts.sp_registry import SPRegistry
 
 # TODO LATER take sector size from smart contracts
 SECTOR_SIZE_BYTES = 32 * 1024 ** 3  # 32 GiB
@@ -16,17 +15,25 @@ def bytes_to_sectors(bytes_size: int) -> float:
     return bytes_size / SECTOR_SIZE_BYTES
 
 
-def get_all_deals(state: PoRepMarketDealState | None = None, organization: Address | None = None) -> list[PoRepMarketDealProposal]:
-    states = [PoRepMarketDealState.from_string(str(state))] if state else list(PoRepMarketDealState)
-    organizations = [organization] if organization else list(set([provider.organization_address for provider in SPRegistry().get_providers_info()]))
+def get_all_deals(state: PoRepMarketDealState | str | None = None,
+                  organization: Address | None = None) -> list[PoRepMarketDealProposal]:
+    _state = PoRepMarketDealState.from_string(str(state)) if state else None
 
-    deals: list[PoRepMarketDealProposal] = []
+    if organization:
+        # prefer get_deals_for_organization_by_state function when asking for organization...
+        result = []
+        selected_states = [_state] if _state else list(PoRepMarketDealState)
 
-    for _organization in organizations:
-        for _state in states:
-            deals.extend(PoRepMarket().get_deals_for_organization_by_state(_organization, _state))
+        for selected_state in selected_states:
+            result.extend(PoRepMarket().get_deals_for_organization_by_state(organization, selected_state))
+    else:
+        # ... otherwise prefer get_all_deals function
+        result = PoRepMarket().get_all_deals()
 
-    return deals
+        if _state:
+            result = [deal for deal in result if deal.state == _state]
+
+    return result
 
 
 def get_chain_id() -> int:

@@ -1,13 +1,7 @@
 import click
 
 from cli import utils
-from cli.commands import utils as commands_utils
-from cli.services.contracts.contract_service import Address
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealProposal, PoRepMarket
-
-
-def get_organization_deals(state: PoRepMarketDealState | None, organization_address: Address) -> list[PoRepMarketDealProposal]:
-    return commands_utils.get_all_deals(state, organization_address)
 
 
 def accept_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | None:

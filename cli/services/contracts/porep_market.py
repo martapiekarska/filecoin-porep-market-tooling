@@ -192,3 +192,8 @@ class PoRepMarket(ContractService):
     # @dev 30 days * 24 hours/day * 60 minutes/hour * 2 epochs/minute = 86_400 epochs
     def get_epochs_in_month(self) -> int:
         return self.contract.functions.EPOCHS_IN_MONTH().call()
+
+    # @notice Gets all deals
+    # @return deals Array of all deal proposals
+    def get_all_deals(self) -> list[PoRepMarketDealProposal]:
+        return [PoRepMarketDealProposal.from_web3(deal) for deal in self.contract.functions.getDeals().call()]
