@@ -1,10 +1,9 @@
 import click
-from web3 import Web3
 from web3.auto import w3
 
 from cli import utils
 from cli._cli import is_dry_run
-from cli.services.contracts.contract_service import Address
+from cli.services.contracts.contract_service import Address, ContractService
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealProposal, PoRepMarket
 
 # TODO LATER take sector size from smart contracts
@@ -36,13 +35,9 @@ def get_all_deals(state: PoRepMarketDealState | str | None = None,
     return result
 
 
-def get_chain_id() -> int:
-    return Web3(Web3.HTTPProvider(utils.get_env("RPC_URL"))).eth.chain_id
-
-
 def print_info():
     try:
-        click.echo(f"Chain ID: {get_chain_id()}")
+        click.echo(f"Chain ID: {ContractService.get_chain_id()}")
     except Exception as e:
         click.echo(f"Error getting chain ID: {e}\n")
 

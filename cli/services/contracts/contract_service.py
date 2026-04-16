@@ -47,8 +47,7 @@ class Address(str):
         if not Address.is_filecoin_address(addr):
             raise ValueError(f"Invalid Filecoin address format: {addr}")
 
-        w3 = Web3(Web3.HTTPProvider(utils.get_env("RPC_URL")))
-        response = w3.provider.make_request(
+        response = ContractService.get_w3().provider.make_request(
             RPCEndpoint("Filecoin.FilecoinAddressToEthAddress"),
             [addr]
         )
@@ -63,15 +62,14 @@ class Address(str):
 
 
 class ContractService:
-    def __init__(self, contract_address: Address | str, contract_abi_path: str, rpc_url=None):
-        rpc_url = rpc_url or utils.get_env("RPC_URL")
+    def __init__(self, contract_address: Address | str, contract_abi_path: str):
         self.logger = logging.getLogger(self._get_class_name())
 
         with open(contract_abi_path, "r", encoding="utf-8") as abi_file:
             contract_abi = json.load(abi_file)
 
-            self.w3 = Web3(Web3.HTTPProvider(rpc_url))
-            self.contract = self.w3.eth.contract(address=Address(contract_address), abi=contract_abi)
+            self.w3 = ContractService.get_w3()
+            self.contract = self.w3.eth.contract(address=Address(str(contract_address)), abi=contract_abi)
 
     def _get_class_name(self):
         return self.__class__.__name__
@@ -113,8 +111,18 @@ class ContractService:
             raise Exception(f"Transaction failed: {str(e)}") from e
 
     @staticmethod
-    def get_address_nonce(from_address: Address, w3: Web3) -> int:
+    def get_w3() -> Web3:
+        return Web3(Web3.HTTPProvider(utils.get_env("RPC_URL")))
+
+    @staticmethod
+    def get_chain_id() -> int:
+        return ContractService.get_w3().eth.chain_id
+
+    @staticmethod
+    def get_address_nonce(from_address: Address, w3: Web3 | None = None) -> int:
         try:
+            w3 = w3 if w3 else ContractService.get_w3()
+
             latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
             pending_nonce = w3.eth.get_transaction_count(from_address, "pending")
 
@@ -147,14 +155,16 @@ class ContractService:
         _dry_run = is_dry_run()
 
         if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
-                                      f"== From: {tx_params['from']}\n"
-                                      f"== To: {tx_params['to']}\n"
-                                      f"== Signature: {transaction.signature}\n"
-                                      f"== Nonce: {tx_params['nonce']}\n"
-                                      f"== Gas Price: {self.w3.eth.gas_price} wei\n"
-                                      f"== Gas: {tx_params['gas']}\n"
-                                      f"== Value: {tx_params['value']} wei\n"
-                                      f"This is the final confirmation", default_answer=_dry_run):
+                                      f"== Chain ID: {tx_params['chainId']}\n"
+                                      f"== Transaction:\n"
+                                      f"==   from: {tx_params['from']}\n"
+                                      f"==   to: {tx_params['to']}\n"
+                                      f"==   signature: {transaction.signature}\n"
+                                      f"==   nonce: {tx_params['nonce']}\n"
+                                      f"==   gas price: {self.w3.eth.gas_price} wei\n"
+                                      f"==   gas: {tx_params['gas']}\n"
+                                      f"==   value: {tx_params['value']} wei\n"
+                                      f"== This is the final confirmation", default_answer=_dry_run):
             click.echo("Enabling dry-run mode. This transaction WILL NOT be executed.")
             _dry_run = True
 

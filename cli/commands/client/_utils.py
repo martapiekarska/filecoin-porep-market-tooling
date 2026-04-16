@@ -7,11 +7,12 @@ from web3.auto import w3
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.services.contracts.contract_service import ContractService, Address
 from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState, PoRepMarketDealRequest
 from cli.services.contracts.usdc_token import USDCToken
 
 
-def get_client_deals(client_address: str, state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
+def get_client_deals(client_address: Address, state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
     all_deals = commands_utils.get_all_deals(state=state)
     return [deal for deal in all_deals if deal.client_address == client_address]
 
@@ -44,7 +45,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
         domain_data={
             "name": token_name,
             "version": "1",
-            "chainId": commands_utils.get_chain_id(),
+            "chainId": ContractService.get_chain_id(),
             "verifyingContract": utils.get_env("USDC_TOKEN")
         },
         message_types={

@@ -7,6 +7,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _utils as client_utils
 from cli.commands.client._client import client_private_key
+from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.porep_market import PoRepMarketDealRequest, PoRepMarketDealTerms, PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
 from cli.services.contracts.usdc_token import USDCToken
@@ -51,17 +52,7 @@ def _fetch_manifest(manifest_url: str) -> list[dict]:
         raise Exception(f"Error fetching manifest: {e}") from e
 
 
-# TODO LATER propose for multiple manifests + state, retry
-def _propose_deal_from_manifest(manifest_url: str,
-                                retrievability_bps: int,
-                                bandwidth_mbps: int,
-                                price_per_sector_per_month: int,
-                                duration_months: int,
-                                latency_ms: int,
-                                indexing_pct: int,
-                                from_private_key: str):
-    #
-    manifest = _fetch_manifest(manifest_url)
+def _validate_manifest_pieces(manifest: list[dict]) -> list[dict]:
     pieces = manifest[0]["pieces"]
 
     if not (pieces and isinstance(pieces, list) and len(pieces) > 1):
@@ -76,9 +67,24 @@ def _propose_deal_from_manifest(manifest_url: str,
     if not all(piece["preparationId"] == pieces[0]["preparationId"] for piece in pieces):
         raise Exception("Invalid preparationId in manifest pieces")
 
-    pieces_size_bytes = sum(piece["pieceSize"] for piece in pieces)
+    return manifest
 
-    # TODO LATER validate params here?
+
+# TODO LATER propose for multiple manifests + state, retry
+# TODO LATER validate params here?
+# TODO LATER print proposed deal at the end? where do we get deal id from? events only?
+def _propose_deal_from_manifest(manifest_url: str,
+                                retrievability_bps: int,
+                                bandwidth_mbps: int,
+                                price_per_sector_per_month: int,
+                                duration_months: int,
+                                latency_ms: int,
+                                indexing_pct: int,
+                                from_private_key: str):
+    #
+    manifest = _validate_manifest_pieces(_fetch_manifest(manifest_url))
+    pieces = manifest[0]["pieces"]
+    pieces_size_bytes = sum(piece["pieceSize"] for piece in pieces)
 
     if pieces_size_bytes <= 0:
         raise Exception("Invalid deal size")
@@ -103,8 +109,13 @@ def _propose_deal_from_manifest(manifest_url: str,
         ),
         manifest_location=manifest_url)
 
-    existing_deals = client_utils.get_client_deals(w3.eth.account.from_key(from_private_key).address)
+    # wait for pending transactions
+    from_address = w3.eth.account.from_key(from_private_key).address
+    _ = ContractService.get_address_nonce(from_address)
 
+    existing_deals = client_utils.get_client_deals(from_address)
+
+    # warn if any of existing client deals looks similar to the new deal proposal
     for existing_deal in existing_deals:
         is_active = existing_deal.state in [PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEPTED]
 

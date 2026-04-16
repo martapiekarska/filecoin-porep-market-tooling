@@ -1,8 +1,10 @@
 import click
+from web3.auto import w3
 
 from cli import utils
 from cli.commands.admin import _utils as admin_utils
 from cli.commands.admin._admin import admin_private_key
+from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.sp_registry import SPRegistry, SPRegistryProvider
 
 
@@ -93,7 +95,11 @@ def __update_provider_params(provider: SPRegistryProvider,
             click.echo("Skipped this parameter\n")
 
 
+# TODO LATER print register provider at the end?
 def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
+    # wait for pending transactions
+    _ = ContractService.get_address_nonce(w3.eth.account.from_key(from_private_key).address)
+
     for provider in providers:
         is_registered = SPRegistry().is_provider_registered(provider.provider_id)
 

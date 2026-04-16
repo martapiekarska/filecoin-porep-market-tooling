@@ -5,10 +5,15 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.sp import _utils as sp_utils
 from cli.commands.sp._sp import sp_private_key
+from cli.services.contracts.contract_service import ContractService
 
 
+# TODO LATER print deals states at the end?
 def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
+    # wait for pending transactions
     from_address = w3.eth.account.from_key(from_private_key).address
+    _ = ContractService.get_address_nonce(from_address)
+
     deals = commands_utils.get_all_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
 
     click.echo(f"Found {len(deals)} proposed deals.")
@@ -19,10 +24,10 @@ def _manage_proposed_deals(from_private_key: str, answer: str | None = None):
                                                               default_answer="skip")
 
         if _answer in ["accept", "a"]:
-            sp_utils.accept_deal_id(deal.deal_id, from_private_key)
+            sp_utils.accept_deal(deal, from_private_key)
 
         elif _answer in ["reject", "r"]:
-            sp_utils.reject_deal_id(deal.deal_id, from_private_key)
+            sp_utils.reject_deal(deal, from_private_key)
 
         elif _answer in ["skip", "s"]:
             continue
