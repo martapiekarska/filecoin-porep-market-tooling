@@ -112,6 +112,8 @@ def _propose_deal_from_manifest(manifest_url: str,
             if not utils.ask_user_confirm(f"\nWarning: Client deal with the same deal size "
                                           f"already exists in PoRep Market: {utils.json_pretty(existing_deal)} "
                                           "Continue?", default_answer=not is_active):
+                #
+                click.echo("Canceled!\n")
                 return
 
         if deal.manifest_location == existing_deal.manifest_location:
@@ -119,6 +121,8 @@ def _propose_deal_from_manifest(manifest_url: str,
                     f"\nWarning: Client deal with the same manifest location "
                     f"already exists in PoRep Market: {utils.json_pretty(existing_deal)} "
                     "Continue?", default_answer=not is_active):
+                #
+                click.echo("Canceled!\n")
                 return
 
     token_name = USDCToken().name()
@@ -135,6 +139,7 @@ def _propose_deal_from_manifest(manifest_url: str,
                                   f" This will cost you maximum of {max_cost_per_month_tokens} {token_name} per month. "
                                   f"This is a total of {total_max_cost_tokens} {token_name} for {duration_months} months. "
                                   f"Continue?"):
+        click.echo("Canceled!\n")
         return
 
     tx_hash = PoRepMarket().propose_deal(deal, from_private_key)

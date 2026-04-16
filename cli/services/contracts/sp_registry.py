@@ -36,7 +36,7 @@ class SPRegistryProviderInfo(SPRegistryProvider):
     blocked: bool
 
     @staticmethod
-    def from_web3(provider_id, data) -> "SPRegistryProviderInfo":
+    def from_web3(provider_id, data) -> "SPRegistryProviderInfo | None":
         if not Address(data[0]):
             # noinspection PyTypeChecker
             return None
@@ -101,7 +101,7 @@ class SPRegistry(ContractService):
     # @notice Get full information about a provider
     # @param provider_id The provider actor ID
     # @return info The provider's registration info
-    def get_provider_info(self, provider_id: int) -> SPRegistryProviderInfo:
+    def get_provider_info(self, provider_id: int) -> SPRegistryProviderInfo | None:
         return SPRegistryProviderInfo.from_web3(provider_id, self.contract.functions.getProviderInfo(provider_id).call())
 
     # @notice Get all providers registered under an organization
@@ -110,7 +110,7 @@ class SPRegistry(ContractService):
     def get_providers_by_organization(self, organization_address: Address) -> list[int]:
         return self.contract.functions.getProvidersByOrganization(organization_address).call()
 
-    def get_providers_info_by_organizations(self, organization_address: Address) -> list[SPRegistryProviderInfo]:
+    def get_providers_info_by_organization(self, organization_address: Address) -> list[SPRegistryProviderInfo]:
         return [self.get_provider_info(provider_id) for provider_id in self.get_providers_by_organization(organization_address)]
 
     # @notice Set the acceptable deal duration range for a provider
@@ -118,8 +118,8 @@ class SPRegistry(ContractService):
     # @param min_deal_duration_days Minimum deal duration in days (0 = no minimum)
     # @param max_deal_duration_days Maximum deal duration in days (0 = no maximum)
     def set_deal_duration_limits(self,
-                                 provider_id:
-                                 int, min_deal_duration_days: int,
+                                 provider_id: int,
+                                 min_deal_duration_days: int,
                                  max_deal_duration_days: int,
                                  from_private_key: str) -> str:
         #

@@ -29,6 +29,9 @@ def __update_provider_params(provider: SPRegistryProvider,
 
             click.echo(f"Updated deal duration limits for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
+        else:
+            click.echo("Skipped this parameter\n")
+
     if provider.price_per_sector_per_month != registered_info.price_per_sector_per_month:
         if utils.ask_user_confirm(
                 f"Updating price_per_sector_per_month for provider {utils.int_id_to_f0_str(provider.provider_id)}: "
@@ -40,6 +43,9 @@ def __update_provider_params(provider: SPRegistryProvider,
                                              from_private_key)
 
             click.echo(f"Updated price per sector per month for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
+
+        else:
+            click.echo("Skipped this parameter\n")
 
     if provider.capabilities != registered_info.capabilities:
         if utils.ask_user_confirm(
@@ -53,6 +59,9 @@ def __update_provider_params(provider: SPRegistryProvider,
 
             click.echo(f"Updated capabilities for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
+        else:
+            click.echo("Skipped this parameter\n")
+
     if provider.payee_address != registered_info.payee_address:
         if utils.ask_user_confirm(
                 f"Updating payee_address for provider {utils.int_id_to_f0_str(provider.provider_id)}: "
@@ -65,6 +74,9 @@ def __update_provider_params(provider: SPRegistryProvider,
 
             click.echo(f"Updated payee address for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
+        else:
+            click.echo("Skipped this parameter\n")
+
     if provider.available_bytes != registered_info.available_bytes:
         if utils.ask_user_confirm(
                 f"Updating available_bytes for provider {utils.int_id_to_f0_str(provider.provider_id)}: "
@@ -76,6 +88,9 @@ def __update_provider_params(provider: SPRegistryProvider,
                                                           from_private_key)
 
             click.echo(f"Updated available bytes for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
+
+        else:
+            click.echo("Skipped this parameter\n")
 
 
 def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
@@ -98,11 +113,14 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
                 click.echo(
                     f"\nCannot update provider info: different organization_address for provider {utils.int_id_to_f0_str(provider.provider_id)}: "
                     f"{different_parameters['organization_address']}")
+                #
                 continue
 
             if not utils.ask_user_confirm(f"\nProvider {utils.int_id_to_f0_str(provider.provider_id)} already registered with different parameters\n"
                                           f"Do you want to update provider {utils.int_id_to_f0_str(provider.provider_id)} parameters?\n"
                                           f"{utils.json_pretty(different_parameters)}"):
+                #
+                click.echo("Skipped this provider")
                 continue
 
             __update_provider_params(provider, registered_info, different_parameters, from_private_key)
@@ -111,6 +129,13 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
             # register provider with given parameters
 
             if not utils.ask_user_confirm(f"\nRegistering Storage Provider with parameters: {provider}", default_answer=True):
+                click.echo("Skipped this provider")
+                continue
+
+            if not utils.ask_user_confirm(f"\nThe organization_address {provider.organization_address} cannot be changed "
+                                          f"once registered for provider_id {utils.int_id_to_f0_str(provider.provider_id)}. Are you sure this is correct?",
+                                          default_answer=False):
+                click.echo("Skipped this provider")
                 continue
 
             tx_hash = SPRegistry().register_provider_for(provider, from_private_key)

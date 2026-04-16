@@ -40,16 +40,13 @@ class Address(str):
 
     @staticmethod
     def is_filecoin_address(addr: str) -> bool:
-        return (addr.startswith("f0") or
-                addr.startswith("f1") or
-                addr.startswith("f2") or
-                addr.startswith("f3") or
-                addr.startswith("f4") or
-                addr.startswith("f5") or
-                addr.startswith("t"))
+        return addr.startswith(("f0", "f1", "f2", "f3", "f4", "f5", "t"))
 
     @staticmethod
     def from_filecoin_address(addr: str) -> "Address":
+        if not Address.is_filecoin_address(addr):
+            raise ValueError(f"Invalid Filecoin address format: {addr}")
+
         w3 = Web3(Web3.HTTPProvider(utils.get_env("RPC_URL")))
         response = w3.provider.make_request(
             RPCEndpoint("Filecoin.FilecoinAddressToEthAddress"),
@@ -161,6 +158,7 @@ class ContractService:
                                       f"== Gas: {tx_params['gas']}\n"
                                       f"== Value: {tx_params['value']} wei\n"
                                       f"This is the final confirmation", default_answer=_dry_run):
+            click.echo("Enabling dry-run mode. This transaction WILL NOT be executed.")
             _dry_run = True
 
         click.echo()

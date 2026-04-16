@@ -101,8 +101,7 @@ def get_db_sps(db_url: str,
             max_deal_duration_days = 42 * 30  # 42 months
 
             if not utils.ask_user_confirm(
-                    f"Organization {org.organization_address} [db_id {org.id}] has max deal duration of {org.deal_duration_max_months} months "
-                    f"({org.deal_duration_max_months * 30} days), "  # PoRep Market smart contracts assumes month == 30 days
+                    f"Organization {org.organization_address} [db_id {org.id}] has max deal duration of {org.deal_duration_max_months * 30} days "
                     f"which exceeds the SPRegistry contract limit of {max_deal_duration_days} days. It will be truncated to this value. "
                     f"Return SPs from this organization?",
                     default_answer=True):
@@ -115,8 +114,7 @@ def get_db_sps(db_url: str,
             min_deal_duration_days = 6 * 30  # 6 months
 
             if not utils.ask_user_confirm(
-                    f"Organization {org.organization_address} [db_id {org.id}] has min deal duration of {org.deal_duration_min_months} months "
-                    f"({org.deal_duration_min_months * 30} days), "  # PoRep Market smart contracts assumes month == 30 days
+                    f"Organization {org.organization_address} [db_id {org.id}] has min deal duration of {org.deal_duration_min_months * 30} days "
                     f"which is below the SPRegistry contract minimum of {min_deal_duration_days} days. It will be increased to this value. "
                     f"Return SPs from this organization?",
                     default_answer=True):

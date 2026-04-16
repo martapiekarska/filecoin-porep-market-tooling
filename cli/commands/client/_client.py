@@ -5,7 +5,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.contract_service import Address
 
-CLIENT_ADDRESS: Address | None = None
+CLIENT_ADDRESS: str | None = None
 CLIENT_PRIVATE_KEY: str | None = None
 
 
@@ -14,7 +14,7 @@ CLIENT_PRIVATE_KEY: str | None = None
 @click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", show_envvar=True, help="Client private key to use.")
 @click.option("--info", is_flag=True, default=False, show_default=True,
               help="Confirm current info before executing command.")
-def client(address: Address | None = None, private_key: str | None = None, info: bool = False):
+def client(address: str | None = None, private_key: str | None = None, info: bool = False):
     """
     Client commands for interacting with the PoRep Market.
     """
@@ -23,7 +23,7 @@ def client(address: Address | None = None, private_key: str | None = None, info:
     CLIENT_PRIVATE_KEY = private_key
 
     global CLIENT_ADDRESS
-    CLIENT_ADDRESS = Address(address) if address else Address(w3.eth.account.from_key(CLIENT_PRIVATE_KEY).address) if CLIENT_PRIVATE_KEY else None
+    CLIENT_ADDRESS = address
 
     if info:
         _info()
@@ -31,16 +31,25 @@ def client(address: Address | None = None, private_key: str | None = None, info:
         click.echo("\n\n")
 
 
+# lazy initialization
 def client_address() -> Address:
+    global CLIENT_ADDRESS
+
     if not CLIENT_ADDRESS:
-        raise Exception("Client address is not set")
+        if CLIENT_PRIVATE_KEY:
+            CLIENT_ADDRESS = w3.eth.account.from_key(CLIENT_PRIVATE_KEY).address
+        else:
+            raise Exception("Neither client address nor private key is set")
 
-    return CLIENT_ADDRESS
+    assert CLIENT_ADDRESS
+    return Address(CLIENT_ADDRESS)
 
 
+# lazy initialization
 def client_private_key() -> str:
     commands_utils.validate_address_matches_private_key(client_address(), CLIENT_PRIVATE_KEY)
 
+    assert CLIENT_PRIVATE_KEY
     return str(CLIENT_PRIVATE_KEY)
 
 

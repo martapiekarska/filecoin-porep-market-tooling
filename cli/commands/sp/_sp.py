@@ -5,7 +5,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.contract_service import Address
 
-SP_ADDRESS: Address | None = None
+SP_ADDRESS: str | None = None
 SP_PRIVATE_KEY: str | None = None
 
 
@@ -14,7 +14,7 @@ SP_PRIVATE_KEY: str | None = None
 @click.option("--private-key", envvar="SP_PRIVATE_KEY", show_envvar=True, help="SP private key to use.")
 @click.option("--info", is_flag=True, default=False, show_default=True,
               help="Confirm current info before executing command.")
-def sp(address: Address | None = None, private_key: str | None = None, info: bool = False):
+def sp(address: str | None = None, private_key: str | None = None, info: bool = False):
     """
     Storage Provider commands for interacting with the PoRep Market.
     """
@@ -23,7 +23,7 @@ def sp(address: Address | None = None, private_key: str | None = None, info: boo
     SP_PRIVATE_KEY = private_key
 
     global SP_ADDRESS
-    SP_ADDRESS = Address(address) if address else Address(w3.eth.account.from_key(SP_PRIVATE_KEY).address) if SP_PRIVATE_KEY else None
+    SP_ADDRESS = address
 
     if info:
         _info()
@@ -31,16 +31,25 @@ def sp(address: Address | None = None, private_key: str | None = None, info: boo
         click.echo("\n\n")
 
 
+# lazy initialization
 def sp_address() -> Address:
+    global SP_ADDRESS
+
     if not SP_ADDRESS:
-        raise Exception("SP address is not set")
+        if SP_PRIVATE_KEY:
+            SP_ADDRESS = w3.eth.account.from_key(SP_PRIVATE_KEY).address
+        else:
+            raise Exception("Neither SP address nor private key is set")
 
-    return SP_ADDRESS
+    assert SP_ADDRESS
+    return Address(SP_ADDRESS)
 
 
+# lazy initialization
 def sp_private_key() -> str:
     commands_utils.validate_address_matches_private_key(sp_address(), SP_PRIVATE_KEY)
 
+    assert SP_PRIVATE_KEY
     return str(SP_PRIVATE_KEY)
 
 

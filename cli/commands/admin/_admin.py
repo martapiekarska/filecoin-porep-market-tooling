@@ -5,7 +5,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.contract_service import Address
 
-ADMIN_ADDRESS: Address | None = None
+ADMIN_ADDRESS: str | None = None
 ADMIN_PRIVATE_KEY: str | None = None
 
 
@@ -14,7 +14,7 @@ ADMIN_PRIVATE_KEY: str | None = None
 @click.option("--private-key", envvar="ADMIN_PRIVATE_KEY", show_envvar=True, help="Admin private key to use.")
 @click.option("--info", is_flag=True, default=False, show_default=True,
               help="Confirm current info before executing command.")
-def admin(address: Address | None = None, private_key: str | None = None, info: bool = False):
+def admin(address: str | None = None, private_key: str | None = None, info: bool = False):
     """
     Admin commands for managing the PoRep Market.
     """
@@ -23,12 +23,7 @@ def admin(address: Address | None = None, private_key: str | None = None, info: 
     ADMIN_PRIVATE_KEY = private_key
 
     global ADMIN_ADDRESS
-    ADMIN_ADDRESS = Address(address) if address else Address(w3.eth.account.from_key(ADMIN_PRIVATE_KEY).address) if ADMIN_PRIVATE_KEY else None
-    # TODO LATER better click exceptions
-    # try:
-    #     ADMIN_ADDRESS = Address(address) if address else Address(w3.eth.account.from_key(ADMIN_PRIVATE_KEY).address) if ADMIN_PRIVATE_KEY else None
-    # except Exception as e:
-    #     raise click.BadParameter(str(e)) from e
+    ADMIN_ADDRESS = address
 
     if info:
         _info()
@@ -36,16 +31,25 @@ def admin(address: Address | None = None, private_key: str | None = None, info: 
         click.echo("\n\n")
 
 
+# lazy initialization
 def admin_address() -> Address:
+    global ADMIN_ADDRESS
+
     if not ADMIN_ADDRESS:
-        raise Exception("Admin address is not set")
+        if ADMIN_PRIVATE_KEY:
+            ADMIN_ADDRESS = w3.eth.account.from_key(ADMIN_PRIVATE_KEY).address
+        else:
+            raise Exception("Neither admin address nor private key is set")
 
-    return ADMIN_ADDRESS
+    assert ADMIN_ADDRESS
+    return Address(ADMIN_ADDRESS)
 
 
+# lazy initialization
 def admin_private_key() -> str:
     commands_utils.validate_address_matches_private_key(admin_address(), ADMIN_PRIVATE_KEY)
 
+    assert ADMIN_PRIVATE_KEY
     return str(ADMIN_PRIVATE_KEY)
 
 

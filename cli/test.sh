@@ -6,6 +6,11 @@
 # This is not designed to be a comprehensive test suite.
 # Hardcoded private keys and addresses are used for testing purposes only and should never be used anywhere else.
 
+# TODO LATER create .env.test for this and run github CI?
+# !!! IMPORTANT
+# This script assumes you've got .env file with all ADMIN_PRIVATE_KEY, CLIENT_PRIVATE_KEY and SP_PRIVATE_KEY set to correct values.
+# However, it will never execute any blockchain transactions, as those always require user confirmation.
+
 set -euo pipefail
 
 # shellcheck disable=SC2155

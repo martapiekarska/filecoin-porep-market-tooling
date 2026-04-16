@@ -11,13 +11,14 @@ from cli.services.contracts.sp_registry import SPRegistry
 @click.argument("state", required=False, type=click.Choice(PoRepMarketDealState.to_string_list(), case_sensitive=False))
 @click.option("--provider-id", required=False,
               help="Provider id to filter deals by.  [default: all providers under current SP organization address]")
-def get_deals(state: PoRepMarketDealState | None = None, provider_id: str | None = None):
+def get_deals(state: str | None = None, provider_id: str | None = None):
     """
     Get deals for the current SP.
 
     STATE - Deal state to filter by. [default: all states]
     """
 
+    _state = PoRepMarketDealState.from_string(state)
     _provider_id = utils.f0_str_id_to_int(provider_id) if provider_id else None
 
     if _provider_id:
@@ -26,7 +27,7 @@ def get_deals(state: PoRepMarketDealState | None = None, provider_id: str | None
     else:
         organization_address = sp_address()
 
-    result = sp_utils.get_organization_deals(state, organization_address)
+    result = sp_utils.get_organization_deals(_state, organization_address)
 
     if _provider_id:
         result = [deal for deal in result if deal.provider_id == _provider_id]

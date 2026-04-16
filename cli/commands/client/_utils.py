@@ -18,7 +18,7 @@ def get_client_deals(client_address: str, state: PoRepMarketDealState | None = N
 
 def calculate_deposit_amount_for_deal(deal: PoRepMarketDealRequest, deposit_for_months: int = 1) -> int:
     if deposit_for_months < 0:
-        raise Exception("Deposit for months must be greater than 0")
+        raise Exception("deposit_for_months must be >= 0")
 
     deal_size_sectors = commands_utils.bytes_to_sectors(deal.terms.deal_size_bytes)
     result = deal_size_sectors * deal.terms.price_per_sector_per_month * deposit_for_months

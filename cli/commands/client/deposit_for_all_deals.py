@@ -11,7 +11,7 @@ from cli.services.contracts.usdc_token import USDCToken
 
 # TODO LATER improve this
 @click.command()
-@click.option("--months", type=click.IntRange(min=0), default=1, show_default=True,
+@click.option("--months", type=click.IntRange(min=1), default=1, show_default=True,
               help="Number of months to calculate required deposit amount for.")
 def deposit_for_all_deals(months: int):
     """
@@ -61,6 +61,8 @@ def __deposit_for_all_deals(deals: list[PoRepMarketDealProposal], months: int, f
                 f"  Current token balance: {token_balance_tokens} {token_name}\n"
                 f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_tokens} {token_name}\n"
                 f"  Total required funds for {len(deals)} deals for {months} months: {total_required_amount_tokens} {token_name}"):
+            #
+            click.echo("Canceled!\n")
             return
 
         click.echo()

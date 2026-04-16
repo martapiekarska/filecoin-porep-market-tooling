@@ -16,6 +16,7 @@ def accept_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | N
         return
 
     if not utils.ask_user_confirm(f"\nAccepting deal id {deal.deal_id}: {deal}"):
+        click.echo("Canceled!\n")
         return
 
     tx_hash = PoRepMarket().accept_deal(deal.deal_id, from_private_key)
@@ -29,6 +30,7 @@ def reject_deal(deal: PoRepMarketDealProposal, from_private_key: str) -> str | N
         return
 
     if not utils.ask_user_confirm(f"\nRejecting deal id {deal.deal_id}: {deal}"):
+        click.echo("Canceled!\n")
         return
 
     tx_hash = PoRepMarket().reject_deal(deal.deal_id, from_private_key)
