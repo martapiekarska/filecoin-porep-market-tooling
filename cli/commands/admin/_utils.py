@@ -124,7 +124,7 @@ def get_db_sps(db_url: str,
         else:
             min_deal_duration_days = org.deal_duration_min_months * 30  # PoRep Market smart contracts assumes month == 30 days
 
-        if min_deal_duration_days * 30 > max_deal_duration_days:  # PoRep Market smart contracts assumes month == 30 days
+        if min_deal_duration_days > max_deal_duration_days:  # PoRep Market smart contracts assumes month == 30 days
             utils.ask_user_ok(
                 f"Organization {org.organization_address} [db_id {org.id}] has min deal duration of {min_deal_duration_days} days, "
                 f"which exceeds the max deal duration of {max_deal_duration_days} days. "
