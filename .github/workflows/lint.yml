@@ -13,26 +13,33 @@ jobs:
         python-version: [ "3.10" ]
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip && \
-          pip install pylint flake8
-      - name: Lint with pylint
+          pip install pylint flake8 ruff
+
+      - name: pylint
         run: |
-          pylint $(git ls-files '*.py') || pylint_exit=$?
+          pylint cli || pylint_exit=$?
           
           # return error for errors + fatals
           if [ $((pylint_exit & 3)) -ne 0 ]; then
             exit $pylint_exit
           fi
-      - name: Lint with flake8
+
+      - name: flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
           # return error for errors + warnings
           flake8 . --count --exit-zero --statistics
+
+      - name: Ruff
+        run: ruff check .
