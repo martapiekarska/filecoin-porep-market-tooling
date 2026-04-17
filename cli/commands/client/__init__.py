@@ -5,6 +5,7 @@ from .get_filecoin_pay_account import get_filecoin_pay_account
 from .init_accepted_deals import init_accepted_deals
 from .propose_deal_from_manifest import propose_deal_from_manifest
 from .propose_deal_from_manifest import propose_deal_from_manifest_mocked
+from .prepare_batches import prepare_batches
 
 client.add_command(info)
 client.add_command(wait)
@@ -14,3 +15,4 @@ client.add_command(propose_deal_from_manifest)
 client.add_command(propose_deal_from_manifest_mocked)
 client.add_command(init_accepted_deals)
 client.add_command(deposit_for_all_deals)
+client.add_command(prepare_batches)

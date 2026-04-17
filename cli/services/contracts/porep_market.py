@@ -81,7 +81,7 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
     validator_address: Address
     state: PoRepMarketDealState
     rail_id: int
-    proposed_at_block: int
+    end_epoch: int
 
     def __post_init__(self):
         self.client_address = Address(self.client_address)
@@ -113,8 +113,8 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
             ),
             validator_address=data[5],
             state=PoRepMarketDealState(data[6]),
-            rail_id=int(data[7]),
-            proposed_at_block=int(data[8]),
+            rail_id=data[7],
+            end_epoch=data[8],
             manifest_location=data[9],
         )
 
