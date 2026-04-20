@@ -125,8 +125,8 @@ if __name__ == "__main__":
                     error_file.writelines(log_file.readlines()[-300:])
 
                 error_file.write("\n")
+                error_file.write("**********************************************************************************************\n")
                 error_file.write(traceback.format_exc())
-                error_file.write("**********************************************************************************************\n\n")
         except Exception as _e:
             print_error("Unable to prepare error report: %s: %s" % (type(_e).__name__, _e))
 

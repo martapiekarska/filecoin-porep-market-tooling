@@ -147,12 +147,15 @@ class ContractService:
         receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60 * 5, poll_latency=5)  # 5 minutes timeout, 5 seconds polling interval
 
         if receipt["status"] == 0:
+            # tx failed
             tx = self.w3.eth.get_transaction(tx_hash)
 
             # this call should revert with the same error as the transaction
-            result = self.w3.eth.call({"to": tx["to"], "from": tx["from"], "data": tx["input"]}, receipt["blockNumber"])
-            raise Exception(f"Transaction reverted (reason unknown, call returned: {result.hex() if result else 'empty'})")
+            reason = self.w3.eth.call({"to": tx["to"], "from": tx["from"], "data": tx["input"]}, receipt["blockNumber"])
+            raise Exception(f"Transaction reverted (reason unknown, call returned: {reason.hex() if reason else 'empty'})")
 
+        # tx succeeded
+        self.logger.warning(f"Transaction succeeded: {tx_hash.to_0x_hex()}: {ContractService.tx_to_log_string(transaction, tx_params)}")
         return tx_hash.to_0x_hex()
 
     def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
