@@ -34,6 +34,8 @@ def get_all_deals(state: PoRepMarketDealState | str | None = None,
 
     return result
 
+def get_block_number() -> int:
+    return Web3(Web3.HTTPProvider(utils.get_env("RPC_URL"))).eth.block_number
 
 def print_info():
     try:
