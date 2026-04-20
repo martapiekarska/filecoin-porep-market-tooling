@@ -122,6 +122,7 @@ def from_wei(amount: int | float, decimals: int) -> float:
 
 
 def str_from_wei(amount: int | float, decimals: int) -> str:
+    # pylint: disable=consider-using-f-string
     return "{:.{}f}".format(from_wei(amount, decimals), decimals)  # cannot be f-string because decimals is dynamic
 
 

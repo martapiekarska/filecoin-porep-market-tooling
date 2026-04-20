@@ -4,6 +4,8 @@
 # Entry point for the CLI app
 # This file is supposed to be python 2 compatible
 
+# pylint: disable=consider-using-f-string
+
 import __future__
 import os
 import sys
@@ -12,6 +14,7 @@ _ = __future__
 
 LOG_FILE = "logs/logs.log"
 ERROR_LOG_FILE = "logs/error.logs"
+DEBUG = False
 
 
 def configure_logger():
@@ -50,21 +53,21 @@ def configure_logger():
     root_logger.addHandler(file_handler)
 
 
-def main():
-    configure_logger()
-
-    from cli import cli
-    cli()
+def print_error(message):
+    print(message, file=sys.stderr)
 
 
-if __name__ == "__main__":
+def check_python_version():
     import platform
 
     if sys.version_info < (3, 10, 0):
-        print("Python >= v3.10.0 required to run %s, you have %s" % (sys.argv[0], platform.python_version()), file=sys.stderr)
+        print_error("Python >= v3.10.0 required to run %s, you have %s" % (sys.argv[0], platform.python_version()))
         sys.exit(1)
 
-    # noinspection PyUnreachableCode
+
+def load_dotenv():
+    global DEBUG, LOG_FILE, ERROR_LOG_FILE
+
     try:
         import dotenv
 
@@ -73,14 +76,30 @@ if __name__ == "__main__":
         DEBUG = os.getenv("DEBUG", default="false").strip().lower() == "true"
         LOG_FILE = os.getenv("_LOG_FILE", default=LOG_FILE)
         ERROR_LOG_FILE = os.getenv("_ERROR_LOG_FILE", default=ERROR_LOG_FILE)
+    except Exception as e:
+        print_error("Error loading environment variables: %s: %s" % (type(e).__name__, e))
+        sys.exit(1)
 
+
+def main():
+    configure_logger()
+
+    from cli import cli
+    cli()
+
+
+if __name__ == "__main__":
+    check_python_version()
+    load_dotenv()
+
+    try:
         main()
 
     except ImportError as e:
         name = e.name
         path = " located at %s" % e.path if e.path else ""
         err_msg = "No module named %s%s" % (name, path) if name else str(e).capitalize()
-        print("%s, please try 'pip install -r requirements.txt'" % err_msg, file=sys.stderr)
+        print_error("%s, please try 'pip install -r requirements.txt'" % err_msg)
 
         if DEBUG:
             raise
@@ -88,7 +107,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
     except Exception as e:
-        print("Internal error occurred: %s: %s\nSee %s for more logs." % (type(e).__name__, e, ERROR_LOG_FILE), file=sys.stderr)
+        print_error("Internal error occurred: %s: %s\nSee %s for more logs." % (type(e).__name__, e, ERROR_LOG_FILE))
 
         # write ERROR_LOG_FILE
         try:
@@ -108,7 +127,7 @@ if __name__ == "__main__":
                 error_file.write(traceback.format_exc())
                 error_file.write("**********************************************************************************************\n\n")
         except Exception as _e:
-            print("Unable to prepare error report: %s: %s" % (type(_e).__name__, _e), file=sys.stderr)
+            print_error("Unable to prepare error report: %s: %s" % (type(_e).__name__, _e))
 
             if DEBUG:
                 raise
