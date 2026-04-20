@@ -13,6 +13,7 @@ class FileCoinPayAccount:
 
     @staticmethod
     def from_web3(data) -> "FileCoinPayAccount":
+        # noinspection PyArgumentList
         return FileCoinPayAccount(
             funds=int(data[0]),
             lockup_current=int(data[1]),
@@ -32,6 +33,7 @@ class FileCoinPayOperatorApproval:
 
     @staticmethod
     def from_web3(data) -> "FileCoinPayOperatorApproval":
+        # noinspection PyArgumentList
         return FileCoinPayOperatorApproval(
             is_approved=bool(data[0]),
             rate_allowance=int(data[1]),
@@ -42,7 +44,6 @@ class FileCoinPayOperatorApproval:
         )
 
 
-# TODO LATER make token default = USDC_TOKEN here
 class FileCoinPay(ContractService):
     def __init__(self, contract_address: Address | str | None = None):
         super().__init__(contract_address if contract_address else utils.get_env("FILECOIN_PAY"),

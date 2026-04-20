@@ -5,10 +5,10 @@ from cli import utils
 from cli.commands.admin import _utils as admin_utils
 from cli.commands.admin._admin import admin_private_key
 from cli.services.contracts.contract_service import ContractService
-from cli.services.contracts.sp_registry import SPRegistry, SPRegistryProvider
+from cli.services.contracts.sp_registry import SPRegistry, SPRegistryProvider, SPRegistryProviderInfo
 
 
-def __update_provider_params(provider: SPRegistryProvider,
+def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderInfo,
                              registered_info: SPRegistryProvider,
                              different_parameters: dict,
                              from_private_key: str):
@@ -107,6 +107,8 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
             # update provider parameters if different from registered ones
 
             registered_info = SPRegistry().get_provider_info(provider.provider_id)
+            assert registered_info
+
             different_parameters = {k: {"new": v, "old": getattr(registered_info, k)}
                                     for k, v in provider.__dict__.items() if
                                     getattr(registered_info, k) != getattr(provider, k)}
@@ -156,8 +158,13 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: str):
               help="IPNI indexing guarantee in percentage to use; 0 means \"don't support\".", )
 @click.option("--miner-id", required=False,
               help="SPRegistry database miner_id (PoRep Market SP ID) to register.")
-# TODO LATER add organization_address argument
-def register_db_sps(db_url: str, db_id: int | None = None, indexing_pct: int = 0, miner_id: str | None = None):
+@click.option("--organization-address", required=False,
+              help="SPRegistry database organization_address to register.")
+def register_db_sps(db_url: str,
+                    db_id: int | None = None,
+                    indexing_pct: int = 0,
+                    miner_id: str | None = None,
+                    organization_address: str | None = None):
     """
     Interactively register SPs from SPRegistry database.
 
@@ -173,7 +180,8 @@ def register_db_sps(db_url: str, db_id: int | None = None, indexing_pct: int = 0
                                kyc_status="approved",
                                organization_id=db_id,
                                indexing_pct=indexing_pct,
-                               miner_id=utils.f0_str_id_to_int(miner_id)),
+                               miner_id=utils.f0_str_id_to_int(miner_id),
+                               organization_address=organization_address),
         admin_private_key())
 
 

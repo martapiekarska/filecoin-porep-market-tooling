@@ -123,6 +123,7 @@ class ContractService:
     def get_address_nonce(from_address: Address, w3: Web3 | None = None) -> int:
         try:
             w3 = w3 if w3 else ContractService.get_w3()
+            assert w3
 
             latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
             pending_nonce = w3.eth.get_transaction_count(from_address, "pending")

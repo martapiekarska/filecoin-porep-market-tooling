@@ -14,8 +14,14 @@ from cli.commands.admin import _utils as admin_utils
               help="IPNI indexing guarantee in percentage to return; 0 means \"don't support\".")
 @click.option("--miner-id", required=False,
               help="SPRegistry database miner_id (PoRep Market SP id) to return.")
-# TODO LATER add organization_address argument
-def get_db_sps(db_url: str, show_all: bool = False, db_id: int | None = None, indexing_pct: int = 0, miner_id: str | None = None):
+@click.option("--organization-address", required=False,
+              help="SPRegistry database organization_address to return.")
+def get_db_sps(db_url: str,
+               show_all: bool = False,
+               db_id: int | None = None,
+               indexing_pct: int = 0,
+               miner_id: str | None = None,
+               organization_address: str | None = None):
     """
     Get SPs from SPRegistry database.
 
@@ -29,5 +35,6 @@ def get_db_sps(db_url: str, show_all: bool = False, db_id: int | None = None, in
             organization_id=db_id,
             indexing_pct=indexing_pct,
             miner_id=utils.f0_str_id_to_int(miner_id),
+            organization_address=organization_address,
         )
     ))

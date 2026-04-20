@@ -93,6 +93,7 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
         if expected_deal_id is not None and expected_deal_id != data[0]:
             raise Exception(f"Invalid deal proposal returned from contract. Expected deal_id {expected_deal_id}, got {data[0]}")
 
+        # noinspection PyArgumentList
         return PoRepMarketDealProposal(
             deal_id=int(data[0]),
             client_address=Address(data[1]),

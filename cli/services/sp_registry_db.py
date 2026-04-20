@@ -85,7 +85,8 @@ class SPRegistryDB:
     def get_organizations(self,
                           kyc_status: str | None = None,
                           organization_id: int | None = None,
-                          miner_id: int | None = None) -> list[SPRegistryDBOrganization]:
+                          miner_id: int | None = None,
+                          organization_address: str | None = None) -> list[SPRegistryDBOrganization]:
         #
         # this is confusing but organizations are called providers in the SPRegistry database
         # and the database miner_ids and considered provider_ids in PoRep Market smart contracts
@@ -93,8 +94,12 @@ class SPRegistryDB:
         query = "SELECT * FROM providers WHERE true"
         params = []
 
+        if organization_address is not None:
+            query += " AND lower(organization_address) = lower(%s)"
+            params.append(organization_address)
+
         if kyc_status is not None:
-            query += " AND kyc_status = %s"
+            query += " AND lower(kyc_status) = lower(%s)"
             params.append(kyc_status)
 
         if organization_id is not None:

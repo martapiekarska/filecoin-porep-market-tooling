@@ -13,7 +13,8 @@ def get_db_sps(db_url: str,
                kyc_status: str | None = None,
                organization_id: int | None = None,
                indexing_pct: int = 0,
-               miner_id: int | None = None) -> list[SPRegistryProvider]:
+               miner_id: int | None = None,
+               organization_address: str | None = None) -> list[SPRegistryProvider]:
     #
     def retrievability_guarantees_to_bps(guarantees: list[str]) -> int:
         def _retrievability_guarantee_to_bps(guarantee: str) -> int:
@@ -72,8 +73,11 @@ def get_db_sps(db_url: str,
 
     #
 
-    organizations = SPRegistryDB(db_url).get_organizations(kyc_status, organization_id, miner_id)
     result: list[SPRegistryProvider] = []
+    organizations = SPRegistryDB(db_url).get_organizations(kyc_status=kyc_status,
+                                                           organization_id=organization_id,
+                                                           miner_id=miner_id,
+                                                           organization_address=organization_address)
 
     for org in organizations:
         if Address.is_filecoin_address(org.payment_address_evm):
@@ -146,6 +150,7 @@ def get_db_sps(db_url: str,
         #
 
         for org_miner_id in org.miner_ids:
+            # noinspection PyArgumentList
             result.append(SPRegistryProvider(
                 provider_id=org_miner_id,
                 organization_address=organization_address,
@@ -169,6 +174,7 @@ def get_db_sps(db_url: str,
 
 
 def get_devnet_sps() -> list[SPRegistryProvider]:
+    # noinspection PyArgumentList
     return [
         SPRegistryProvider(provider_id=1009,
                            organization_address="0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951",
