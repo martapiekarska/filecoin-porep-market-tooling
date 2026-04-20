@@ -246,6 +246,10 @@ class ContractService:
         return ContractService.get_w3().eth.block_number
 
     @staticmethod
+    def wait_for_pending_transactions(from_address: Address, w3: Web3 | None = None):
+        _ = ContractService.get_address_nonce(from_address, w3, block_identifier="pending")
+
+    @staticmethod
     def get_address_nonce(from_address: Address,
                           w3: Web3 | None = None,
                           block_identifier: str = "pending") -> int:

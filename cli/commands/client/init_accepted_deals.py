@@ -30,9 +30,8 @@ def init_accepted_deals():
 
 # TODO LATER print deal state at the end?
 def _init_accepted_deals(from_private_key: PrivateKeyType):
-    # wait for pending transactions
     from_address = Address.from_private_key(from_private_key)
-    _ = ContractService.get_address_nonce(from_address)
+    ContractService.wait_for_pending_transactions(from_address)
 
     accepted_deals = client_utils.get_client_deals(from_address, PoRepMarketDealState.ACCEPTED)
     click.echo(f"Found {len(accepted_deals)} accepted deals for client_address {from_address}\n")
@@ -41,12 +40,13 @@ def _init_accepted_deals(from_private_key: PrivateKeyType):
         click.echo(f"\nDeal id {deal.deal_id}: {utils.json_pretty(deal)}\n")
 
         _deploy_and_set_validator(deal.deal_id, from_private_key)
-        _ = ContractService.get_address_nonce(from_address)  # wait for pending transactions
+        ContractService.wait_for_pending_transactions(from_address)
 
         _deposit_and_approve_operator(deal.deal_id, from_private_key)
-        _ = ContractService.get_address_nonce(from_address)  # wait for pending transactions
+        ContractService.wait_for_pending_transactions(from_address)
 
         _initialize_rail(deal.deal_id, from_private_key)
+        ContractService.wait_for_pending_transactions(from_address)
 
     click.echo("\n\nAll done!")
     click.echo(f"\nRun {sys.argv[0]} client deposit-for-all-deals to make sure you have enough FileCoinPay funds deposited for all your accepted deals")

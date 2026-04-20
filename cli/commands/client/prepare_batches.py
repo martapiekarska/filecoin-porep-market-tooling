@@ -1,10 +1,11 @@
 import cbor2
 import click
 import multibase
+from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands.client import _utils as client_utils
-from cli.commands.client._client import client_private_key
+from cli.commands.client._client import client_private_key, client_address
 from cli.services.contracts.client_contract import ClientContract
 from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarket
@@ -14,17 +15,7 @@ EPOCHS_PER_MONTH = EPOCHS_PER_DAY * 30
 BATCH_SIZE = 10
 
 
-@click.command()
-@click.argument("deal_id", type=click.IntRange(min=0))
-@click.option("--dry-run", is_flag=True, default=False, show_default=True, help="Print transfer params without broadcasting.")
-@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True, help="Batch number to start from (1-based index).")
-def prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None = None):
-    """
-    Prepares and optionally sends DDO allocation transactions for a given DEAL_ID in batches.
-
-    DEAL_ID: ID of the deal to prepare batches for.
-    """
-
+def _prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None, from_private_key: PrivateKeyType):
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if deal.state != PoRepMarketDealState.ACCEPTED:
@@ -67,10 +58,26 @@ def prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None = None)
             click.echo(f"to={params.to[0].hex()}  amount={params.amount[0].hex()}  operator_data={params.operator_data.hex()}   is_completed={is_completed}")
         else:
             click.echo("production alert")
-            tx_hash = client_contract.transfer(params, deal_id, is_completed, client_private_key())
+            tx_hash = client_contract.transfer(params, deal_id, is_completed, from_private_key)
             click.echo(f"params: {params}, tx={tx_hash}, deal_completed={is_completed}")
 
         click.echo(f"Batch {current_batch_number} done.")
+
+
+@click.command()
+@click.argument("deal_id", type=click.IntRange(min=0))
+@click.option("--dry-run", is_flag=True, default=False, show_default=True, help="Print transfer params without broadcasting.")
+@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True, help="Batch number to start from (1-based index).")
+def prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None = None):
+    """
+    Prepares and optionally sends DDO allocation transactions for a given DEAL_ID in batches.
+
+    DEAL_ID: ID of the deal to prepare batches for.
+    """
+
+    ContractService.wait_for_pending_transactions(client_address())
+
+    _prepare_batches(deal_id, start_batch, dry_run, client_private_key())
 
 
 def _build_operator_data_batch(provider_id: int, batch: list[tuple[str, int]], term_min: int, term_max: int, expiration: int) -> bytes:

@@ -69,9 +69,8 @@ def _propose_deal_from_manifest(manifest_url: str,
         ),
         manifest_location=manifest_url)
 
-    # wait for pending transactions
     from_address = Address.from_private_key(from_private_key)
-    _ = ContractService.get_address_nonce(from_address)
+    ContractService.wait_for_pending_transactions(from_address)
 
     existing_deals = client_utils.get_client_deals(from_address)
 

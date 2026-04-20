@@ -86,5 +86,4 @@ def wait():
     Wait for all pending transactions from the current private key to be mined and exit. Useful when executing a series of commands.
     """
 
-    # wait for pending transactions
-    _ = ContractService.get_address_nonce(admin_address(), block_identifier="pending")
+    ContractService.wait_for_pending_transactions(admin_address())

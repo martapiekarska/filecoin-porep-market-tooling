@@ -97,8 +97,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
 
 # TODO LATER print register provider at the end?
 def _register_sps(providers: list[SPRegistryProvider], from_private_key: PrivateKeyType):
-    # wait for pending transactions
-    _ = ContractService.get_address_nonce(Address.from_private_key(from_private_key))
+    ContractService.wait_for_pending_transactions(Address.from_private_key(from_private_key))
 
     for provider in providers:
         is_registered = SPRegistry().is_provider_registered(provider.provider_id)

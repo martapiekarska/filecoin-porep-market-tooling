@@ -10,9 +10,8 @@ from cli.services.contracts.contract_service import ContractService, Address
 
 # TODO LATER print deals states at the end?
 def _manage_proposed_deals(from_private_key: PrivateKeyType, answer: str | None = None):
-    # wait for pending transactions
     from_address = Address.from_private_key(from_private_key)
-    _ = ContractService.get_address_nonce(from_address)
+    ContractService.wait_for_pending_transactions(from_address)
 
     deals = commands_utils.get_all_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
 

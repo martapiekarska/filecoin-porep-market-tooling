@@ -23,9 +23,8 @@ def deposit_for_all_deals(months: int):
 
 
 def _deposit_for_all_deals(months: int, from_private_key: PrivateKeyType):
-    # wait for pending transactions
     from_address = Address.from_private_key(from_private_key)
-    _ = ContractService.get_address_nonce(from_address)
+    ContractService.wait_for_pending_transactions(from_address)
 
     accepted_deals = client_utils.get_client_deals(from_address, PoRepMarketDealState.ACCEPTED)
     __deposit_for_all_deals(accepted_deals, months, from_private_key)
