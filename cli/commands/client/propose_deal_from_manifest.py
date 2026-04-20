@@ -12,24 +12,6 @@ from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
 from cli.services.contracts.usdc_token import USDCToken
 
 
-def _validate_manifest_pieces(manifest: list[dict]) -> list[dict]:
-    pieces = manifest[0]["pieces"]
-
-    if not (pieces and isinstance(pieces, list) and len(pieces) > 1):
-        raise Exception("No pieces found in manifest")
-
-    data_pieces = [piece for piece in pieces if piece["pieceType"] == "data"]
-    dag_pieces = [piece for piece in pieces if piece["pieceType"] == "dag"]
-
-    if len(data_pieces) != len(pieces) - 1 or len(dag_pieces) != 1:
-        raise Exception("Invalid manifest pieces: must contain exactly one dag piece and at least one data piece")
-
-    if not all(piece["preparationId"] == pieces[0]["preparationId"] for piece in pieces):
-        raise Exception("Invalid preparationId in manifest pieces")
-
-    return manifest
-
-
 # TODO LATER propose for multiple manifests + state, retry
 # TODO LATER validate params here?
 # TODO LATER print proposed deal at the end? where do we get deal id from? events only?
@@ -42,7 +24,7 @@ def _propose_deal_from_manifest(manifest_url: str,
                                 indexing_pct: int,
                                 from_private_key: PrivateKeyType):
     #
-    manifest = _validate_manifest_pieces(client_utils.fetch_manifest(manifest_url))
+    manifest = client_utils.fetch_manifest(manifest_url)
     pieces = manifest[0]["pieces"]
     pieces_size_bytes = sum(piece["pieceSize"] for piece in pieces)
 

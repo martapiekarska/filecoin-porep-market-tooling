@@ -135,7 +135,7 @@ def get_db_sps(db_url: str,
 
         if Address.is_filecoin_address(org.organization_address):
             # TODO LATER remove me
-            _MOCK_F_ORG_ADDR = utils.get_env("_MOCK_F_ORG_ADDR", default="").strip().lower()
+            _MOCK_F_ORG_ADDR = utils.get_env_required("_MOCK_F_ORG_ADDR", default="", required_type=Address).strip().lower()
             organization_address = Address(_MOCK_F_ORG_ADDR) if _MOCK_F_ORG_ADDR else Address.from_filecoin_address(org.organization_address)
 
             if not utils.ask_user_confirm(

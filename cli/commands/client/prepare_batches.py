@@ -21,7 +21,7 @@ def _prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None, from_
     if deal.state != PoRepMarketDealState.ACCEPTED:
         raise Exception(f"Deal id {deal_id} is not in ACCEPTED state")
 
-    manifest = client_utils.fetch_manifest(deal.manifest_location)
+    manifest = client_utils.fetch_manifest(deal.manifest_location, show_manifest=False)
     pieces = [piece for attachment in manifest for piece in attachment["pieces"]]
     batches = _batch_pieces(pieces)
     deal_duration = deal.terms.duration_days * EPOCHS_PER_DAY
@@ -48,7 +48,7 @@ def _prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None, from_
 
         params = ClientContract.TransferParams(
             to=(b"\x00\x06",),
-            amount=(utils.uint_to_bytes(total_size), False),
+            amount=(utils.uint_to_bytes(total_size, size=None), False),
             operator_data=operator_data,
         )
 
@@ -57,7 +57,6 @@ def _prepare_batches(deal_id: int, start_batch: int, dry_run: bool | None, from_
         if dry_run:
             click.echo(f"to={params.to[0].hex()}  amount={params.amount[0].hex()}  operator_data={params.operator_data.hex()}   is_completed={is_completed}")
         else:
-            click.echo("production alert")
             tx_hash = client_contract.transfer(params, deal_id, is_completed, from_private_key)
             click.echo(f"params: {params}, tx={tx_hash}, deal_completed={is_completed}")
 

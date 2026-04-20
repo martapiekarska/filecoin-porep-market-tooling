@@ -10,8 +10,8 @@ from cli.services.contracts.contract_service import ContractService, Address
 class ClientContract(ContractService):
     TransferParams = namedtuple("TransferParams", ["to", "amount", "operator_data"])
 
-    def __init__(self, contract_address: Address | str = None):
-        super().__init__(contract_address if contract_address else utils.get_env("CLIENT_CONTRACT"),
+    def __init__(self, contract_address: Address | None = None):
+        super().__init__(contract_address if contract_address else utils.get_env_required("CLIENT_CONTRACT", required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/Client.json")
 
     def transfer(self, transfer_params: tuple, deal_id: int, deal_completed: bool, from_private_key: PrivateKeyType) -> str:

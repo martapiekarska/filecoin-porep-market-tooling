@@ -48,7 +48,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
             "name": token_name,
             "version": "1",
             "chainId": ContractService.get_chain_id(),
-            "verifyingContract": utils.get_env("USDC_TOKEN")
+            "verifyingContract": utils.get_env_required("USDC_TOKEN", required_type=Address)
         },
         message_types={
             "Permit": [
@@ -61,7 +61,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
         },
         message_data={
             "owner": from_address,
-            "spender": utils.get_env("FILECOIN_PAY"),
+            "spender": utils.get_env_required("FILECOIN_PAY", required_type=Address),
             "value": amount,
             "nonce": USDCToken().nonces(from_address),
             "deadline": permit_deadline
@@ -74,7 +74,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
     return signed_msg
 
 
-def fetch_manifest(manifest_url: str) -> list[dict]:
+def fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list[dict]:
     click.echo(f"Fetching manifest from {manifest_url}")
 
     try:
@@ -83,7 +83,7 @@ def fetch_manifest(manifest_url: str) -> list[dict]:
         click.echo("Manifest downloaded")
 
         # show manifest
-        if utils.ask_user_confirm("Show manifest?", default_answer=False):
+        if show_manifest or (show_manifest is None and utils.ask_user_confirm("Show manifest?", default_answer=False)):
             _manifest = utils.json_pretty(manifest)
             click.echo_via_pager("\n".join([f"{i + 1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
 
@@ -101,15 +101,26 @@ def fetch_manifest(manifest_url: str) -> list[dict]:
 
                 manifest[0]["pieces"] and
                 isinstance(manifest[0]["pieces"], list) and
-                len(manifest[0]["pieces"]) > 0 and
 
                 all(isinstance(piece, dict) and
+                    "pieceCid" in piece and
                     "pieceType" in piece and
                     "pieceSize" in piece and
                     "preparationId" in piece for piece in
                     manifest[0]["pieces"])
         ):
             raise Exception("Invalid manifest format")
+
+        # validate manifest pieces
+        pieces = manifest[0]["pieces"]
+        data_pieces = [piece for piece in pieces if piece["pieceType"] == "data"]
+        dag_pieces = [piece for piece in pieces if piece["pieceType"] == "dag"]
+
+        if len(pieces) <= 1 or len(data_pieces) != len(pieces) - 1 or len(dag_pieces) != 1:
+            raise Exception("Invalid manifest pieces: must contain exactly one dag piece and at least one data piece")
+
+        if not all(piece["preparationId"] == pieces[0]["preparationId"] for piece in pieces):
+            raise Exception("Invalid preparationId in manifest pieces: must be the same for all pieces")
 
         return manifest
     except Exception as e:

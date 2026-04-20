@@ -65,8 +65,8 @@ class SPRegistryProviderInfo(SPRegistryProvider):
 
 
 class SPRegistry(ContractService):
-    def __init__(self, contract_address: Address | str | None = None):
-        super().__init__(contract_address if contract_address else utils.get_env("SP_REGISTRY"),
+    def __init__(self, contract_address: Address | None = None):
+        super().__init__(contract_address if contract_address else utils.get_env_required("SP_REGISTRY", required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/SPRegistry.json")
 
     # @notice Register a provider with full configuration in one call

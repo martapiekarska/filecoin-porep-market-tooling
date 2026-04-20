@@ -120,8 +120,8 @@ class PoRepMarketDealProposal(PoRepMarketDealRequest):
 
 
 class PoRepMarket(ContractService):
-    def __init__(self, contract_address: Address | str | None = None):
-        super().__init__(contract_address if contract_address else utils.get_env("POREP_MARKET"),
+    def __init__(self, contract_address: Address | None = None):
+        super().__init__(contract_address if contract_address else utils.get_env_required("POREP_MARKET", required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/PoRepMarket.json")
 
     # @notice Proposes a deal

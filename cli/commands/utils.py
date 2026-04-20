@@ -51,7 +51,7 @@ def print_info():
     click.echo(f"USDC_TOKEN={utils.get_env('USDC_TOKEN', required=False)}")
     click.echo()
     click.echo(f"DRY_RUN={is_dry_run()}")
-    click.echo(f"DEBUG={utils.get_env('DEBUG', default='False').capitalize()}")
+    click.echo(f"DEBUG={utils.get_env_required('DEBUG', default='False').capitalize()}")
 
 
 def validate_address_matches_private_key(address: Address, private_key: PrivateKeyType | None):

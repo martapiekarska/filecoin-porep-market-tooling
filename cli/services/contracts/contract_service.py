@@ -76,7 +76,7 @@ class Address(str):
 
 
 class ContractService:
-    def __init__(self, contract_address: Address | str, contract_abi_path: str):
+    def __init__(self, contract_address: Address, contract_abi_path: str):
         self.logger = logging.getLogger(self._get_class_name())
 
         with open(contract_abi_path, "r", encoding="utf-8") as abi_file:
@@ -235,7 +235,7 @@ class ContractService:
 
     @staticmethod
     def get_w3() -> Web3:
-        return Web3(Web3.HTTPProvider(utils.get_env("RPC_URL")))
+        return Web3(Web3.HTTPProvider(utils.get_env_required("RPC_URL")))
 
     @staticmethod
     def get_chain_id() -> int:

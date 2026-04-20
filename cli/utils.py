@@ -2,6 +2,7 @@ import dataclasses
 import enum
 import json
 import os
+from typing import TypeVar, Callable
 
 from dotenv import load_dotenv
 from eth_account.types import PrivateKeyType
@@ -10,20 +11,30 @@ load_dotenv(dotenv_path=None)
 
 MAX_UINT256 = 2 ** 256 - 1
 
+T = TypeVar("T")
 
-def get_env(name, required=True, default=None):
+
+def get_env_required(name, default: T | None = None, required_type: Callable[[str], T] = str) -> T:
+    return get_env(name, required=True, default=default, required_type=required_type)
+
+
+def get_env(name, required=True, default: T | None = None, required_type: Callable[[str], T] = str) -> T | None:
     value = os.getenv(name)
 
     def is_empty(v):
         return v is None or v.strip() == ""
 
-    if is_empty(value) and not is_empty(default):
-        value = default
+    if is_empty(value) and default is not None:
+        return default
 
-    if is_empty(value) and required:
-        raise Exception(f"Environment variable {name} is not set, see .env file")
+    if is_empty(value):
+        if required:
+            raise Exception(f"Environment variable {name} is not set, see .env file")
 
-    return value
+        return None
+
+    # noinspection PyTypeChecker
+    return required_type(value)
 
 
 def string_to_bool(value: str | None) -> bool | None:
@@ -138,12 +149,19 @@ def to_wei(amount: int | float, decimals: int) -> int:
     return int(result)
 
 
-def uint_to_bytes(x: int, size: int = 32) -> bytes:
-    if x == 0:
-        return b"\x00"
-
+# returns minimal size if size is None
+def uint_to_bytes(x: int, size: int | None = 32) -> bytes:
     if x < 0:
         raise ValueError("Cannot convert negative integer to bytes")
+
+    if size is None:
+        if x == 0:
+            return b"\x00"
+
+        size = (x.bit_length() + 7) // 8
+
+    if not size or size < 0:
+        raise ValueError(f"Invalid size: {size}")
 
     return x.to_bytes(size, "big")
 

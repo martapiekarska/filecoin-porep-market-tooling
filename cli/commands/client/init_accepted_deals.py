@@ -86,7 +86,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
         return
 
     from_address = Address.from_private_key(from_private_key)
-    operator_approval = FileCoinPay().get_operator_approval(utils.get_env("USDC_TOKEN"),
+    operator_approval = FileCoinPay().get_operator_approval(utils.get_env_required("USDC_TOKEN", required_type=Address),
                                                             from_address,
                                                             deal.validator_address)
 
@@ -97,7 +97,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
     token_decimals = USDCToken().decimals()
     token_name = USDCToken().name()
 
-    filecoinpay_account = FileCoinPay().get_account(utils.get_env("USDC_TOKEN"), from_address)
+    filecoinpay_account = FileCoinPay().get_account(utils.get_env_required("USDC_TOKEN", required_type=Address), from_address)
     filecoinpay_available_funds = filecoinpay_account.funds - filecoinpay_account.lockup_current
     filecoinpay_available_funds_str = utils.str_from_wei(filecoinpay_available_funds, token_decimals)
 
@@ -137,7 +137,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
 
     click.echo()
     signed_msg = client_utils.sign_filecoinpay_permit(deposit_amount, permit_deadline, from_private_key)
-    tx_hash = FileCoinPay().deposit_with_permit_and_approve_operator(utils.get_env("USDC_TOKEN"),
+    tx_hash = FileCoinPay().deposit_with_permit_and_approve_operator(utils.get_env_required("USDC_TOKEN", required_type=Address),
                                                                      from_address,
                                                                      deposit_amount,
                                                                      permit_deadline,
@@ -163,7 +163,7 @@ def _initialize_rail(deal_id: int, from_private_key: PrivateKeyType) -> str | No
         return
 
     from_address = Address.from_private_key(from_private_key)
-    operator_approval = FileCoinPay().get_operator_approval(utils.get_env("USDC_TOKEN"),
+    operator_approval = FileCoinPay().get_operator_approval(utils.get_env_required("USDC_TOKEN", required_type=Address),
                                                             from_address,
                                                             deal.validator_address)
 
@@ -179,7 +179,7 @@ def _initialize_rail(deal_id: int, from_private_key: PrivateKeyType) -> str | No
         click.echo("Canceled!\n")
         return
 
-    tx_hash = FileCoinPayValidator(deal.validator_address).create_rail(utils.get_env("USDC_TOKEN"), from_private_key)
+    tx_hash = FileCoinPayValidator(deal.validator_address).create_rail(utils.get_env_required("USDC_TOKEN", required_type=Address), from_private_key)
 
     click.echo(f"FileCoinPay rail initialized for deal id {deal.deal_id}: {tx_hash}")
     return tx_hash
