@@ -133,19 +133,24 @@ class ContractService:
         # transaction.args is sensitive info, should never be logged
         # tx_params.data is sensitive info, should never be logged
 
-        try:
-            signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
-        except Exception as e:
-            raise Exception(f"Transaction signing failed: {str(e)}") from e
-
-        try:
-            tx_hash = self.__send_tx(signed_tx, dry_run)
-            self.logger.warning(f"Transaction sent: {tx_hash}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+        signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
+        tx_hash = self.__send_tx(signed_tx, dry_run)
+        self.logger.warning(f"Transaction sent: {tx_hash}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+        
+        if dry_run:
             return tx_hash
-        except Exception as e:
-            self.logger.error(f"Transaction failed: {str(e)}: {ContractService.tx_to_log_string(transaction, tx_params)}")
-            raise Exception(f"Transaction failed: {str(e)}") from e
 
+        click.echo(f"Waiting for transaction {tx_hash}")
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        if receipt.status == 0:
+            tx = self.w3.eth.get_transaction(tx_hash)
+            # this call should revert with the same error as the transaction
+            result = self.w3.eth.call({"to": tx["to"], "from": tx["from"], "data": tx["input"]}, receipt["blockNumber"])
+            raise Exception(f"Transaction reverted (reason unknown, call returned: {result.hex() if result else 'empty'})")
+
+        return tx_hash
+            
     def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
         # transaction.args is sensitive info, should never be logged
 
@@ -155,7 +160,7 @@ class ContractService:
 
         try:
             # tx_params.data is sensitive info, should never be logged
-            tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce})
+            tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce, "gas": 10000000})
 
             _dry_run = is_dry_run()
 
@@ -177,8 +182,11 @@ class ContractService:
             return self._sign_and_send_tx(transaction, tx_params, from_private_key, _dry_run)
         except ContractCustomError as cce:
             reason = self.__decode_contract_error_name(cce)
-            self.logger.error(f"Transaction reverted: {reason}: {ContractService.tx_to_log_string(transaction, tx_params)}")
-            raise Exception(f"Transaction reverted: {reason}") from cce
+            self.logger.error(f"Transaction reverted with error: {reason}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+            raise Exception(f"Transaction reverted with error: {reason}") from cce
+        except Exception as e:
+            self.logger.error(f"Transaction failed: {str(e)}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+            raise Exception(f"Transaction failed: {str(e)}") from e
 
     @staticmethod
     def tx_to_log_string(transaction, tx_params: dict | None) -> str:
