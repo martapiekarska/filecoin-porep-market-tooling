@@ -99,19 +99,19 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: str) -> str | 
 
     filecoinpay_account = FileCoinPay().get_account(utils.get_env("USDC_TOKEN"), from_address)
     filecoinpay_available_funds = filecoinpay_account.funds - filecoinpay_account.lockup_current
-    filecoinpay_available_funds_tokens = utils.to_tokens_str(filecoinpay_available_funds, token_decimals)
+    filecoinpay_available_funds_str = utils.str_from_wei(filecoinpay_available_funds, token_decimals)
 
     token_balance = USDCToken().balance_of(from_address)
-    token_balance_tokens = utils.to_tokens_str(token_balance, token_decimals)
+    token_balance_str = utils.str_from_wei(token_balance, token_decimals)
 
     permit_deadline = client_utils.get_permit_deadline()
 
     deposit_amount = client_utils.calculate_deposit_amount_for_deal(deal)
-    deposit_amount_tokens = utils.to_tokens_str(deposit_amount, token_decimals)
+    deposit_amount_str = utils.str_from_wei(deposit_amount, token_decimals)
 
     if token_balance < deposit_amount:
-        raise Exception(f"Address {from_address} {token_name} balance {token_balance_tokens} is "
-                        f"less than required deposit {deposit_amount_tokens} {token_name} for deal id {deal.deal_id}")
+        raise Exception(f"Address {from_address} {token_name} balance {token_balance_str} is "
+                        f"less than required deposit {deposit_amount_str} {token_name} for deal id {deal.deal_id}")
 
     # These parameters control operator approval limits in the FileCoinPay contract, not EIP-2612 permits
     # Setting all three to MAX_UINT256 grants the operator unrestricted control over payment rates, fund lockup amounts, and lockup periods
@@ -124,9 +124,9 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: str) -> str | 
     # This code now deposit full deposit_amount for the deal only logging the filecoinpay_available_funds
     # This is intentional
     if not utils.ask_user_confirm(
-            f"\nDeposit {deposit_amount_tokens} {token_name} for deal id {deal.deal_id} from address {from_address} and approve operator\n"
-            f"  Current token balance: {token_balance_tokens} {token_name}\n"
-            f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_tokens} {token_name}\n"
+            f"\nDeposit {deposit_amount_str} {token_name} for deal id {deal.deal_id} from address {from_address} and approve operator\n"
+            f"  Current token balance: {token_balance_str} {token_name}\n"
+            f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_str} {token_name}\n"
             f"  Operator address: {deal.validator_address}\n"
             f"  Rate allowance: {'MAX_UINT256' if rate_allowance == utils.MAX_UINT256 else rate_allowance}\n"
             f"  Lockup allowance: {'MAX_UINT256' if lockup_allowance == utils.MAX_UINT256 else lockup_allowance}\n"
@@ -148,7 +148,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: str) -> str | 
                                                                      max_lockup_period,
                                                                      from_private_key)
 
-    click.echo(f"Deposited {deposit_amount_tokens} {token_name} and operator approved for deal id {deal.deal_id}: {tx_hash}")
+    click.echo(f"Deposited {deposit_amount_str} {token_name} and operator approved for deal id {deal.deal_id}: {tx_hash}")
     return tx_hash
 
 

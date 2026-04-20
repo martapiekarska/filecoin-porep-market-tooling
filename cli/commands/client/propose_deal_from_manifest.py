@@ -140,15 +140,15 @@ def _propose_deal_from_manifest(manifest_url: str,
     deal_duration_months = deal.terms.duration_days // 30  # PoRep Market smart contracts assumes month == 30 days
 
     max_cost_per_month = client_utils.calculate_deposit_amount_for_deal(deal, deposit_for_months=1)
-    max_cost_per_month_tokens = utils.to_tokens_str(max_cost_per_month, USDCToken().decimals())
+    max_cost_per_month_str = utils.str_from_wei(max_cost_per_month, USDCToken().decimals())
 
     total_max_cost = max_cost_per_month * deal_duration_months
-    total_max_cost_tokens = utils.to_tokens_str(total_max_cost, USDCToken().decimals())
+    total_max_cost_str = utils.str_from_wei(total_max_cost, USDCToken().decimals())
 
     # TODO LATER print account info (you now have ... at address ...)
     if not utils.ask_user_confirm(f"\nProposing deal: {utils.json_pretty(deal)}"
-                                  f" This will cost you maximum of {max_cost_per_month_tokens} {token_name} per month. "
-                                  f"This is a total of {total_max_cost_tokens} {token_name} for {duration_months} months. "
+                                  f" This will cost you maximum of {max_cost_per_month_str} {token_name} per month. "
+                                  f"This is a total of {total_max_cost_str} {token_name} for {duration_months} months. "
                                   f"Continue?"):
         click.echo("Canceled!\n")
         return
@@ -210,7 +210,7 @@ def propose_deal_from_manifest_mocked(manifest_url: str):
 
     retrievability_bps = 10
     bandwidth_mbps = 1
-    price_per_sector_per_month = utils.from_tokens(2, USDCToken().decimals())  # 2 USDC per sector per month
+    price_per_sector_per_month = utils.to_wei(2, USDCToken().decimals())  # 2 USDC per sector per month
     duration_months = 3
     latency_ms = 999
     indexing_pct = 1

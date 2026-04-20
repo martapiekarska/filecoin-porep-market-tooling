@@ -61,7 +61,7 @@ def get_db_sps(db_url: str,
         if not payment_types or len(payment_types) != 1 or payment_types[0] != "USDFC":  # TODO LATER axlUSDC?
             raise ValueError(f"Unsupported payment type: {payment_types}")
 
-        price_per_tib = utils.from_tokens(price_per_tib_tokens, USDCToken().decimals())
+        price_per_tib = utils.to_wei(price_per_tib_tokens, USDCToken().decimals())
         sectors_per_tib = 1024 ** 4 // commands_utils.SECTOR_SIZE_BYTES
         result = price_per_tib / sectors_per_tib
 

@@ -40,30 +40,30 @@ def __deposit_for_all_deals(deals: list[PoRepMarketDealProposal], months: int, f
     token_name = USDCToken().name()
 
     token_balance = USDCToken().balance_of(from_address)
-    token_balance_tokens = utils.to_tokens_str(token_balance, token_decimals)
+    token_balance_str = utils.str_from_wei(token_balance, token_decimals)
 
     filecoinpay_available_funds = filecoinpay_account.funds - filecoinpay_account.lockup_current
-    filecoinpay_available_funds_tokens = utils.to_tokens_str(filecoinpay_available_funds, token_decimals)
+    filecoinpay_available_funds_str = utils.str_from_wei(filecoinpay_available_funds, token_decimals)
 
     total_required_amount = sum(client_utils.calculate_deposit_amount_for_deal(deal, months) for deal in deals)
-    total_required_amount_tokens = utils.to_tokens_str(total_required_amount, token_decimals)
+    total_required_amount_str = utils.str_from_wei(total_required_amount, token_decimals)
 
     if filecoinpay_available_funds < total_required_amount:
         deposit_amount = total_required_amount - filecoinpay_available_funds
-        deposit_amount_tokens = utils.to_tokens_str(deposit_amount, token_decimals)
+        deposit_amount_str = utils.str_from_wei(deposit_amount, token_decimals)
 
         permit_deadline = client_utils.get_permit_deadline()
 
         if token_balance < deposit_amount:
             raise Exception(
-                f"Address {from_address} {token_name} balance {token_balance_tokens} {token_name} is "
-                f"less than required deposit {deposit_amount_tokens} for {len(deals)} deals")
+                f"Address {from_address} {token_name} balance {token_balance_str} {token_name} is "
+                f"less than required deposit {deposit_amount_str} for {len(deals)} deals")
 
         if not utils.ask_user_confirm(
-                f"\nDeposit {deposit_amount_tokens} {token_name} to FileCoinPay account for {len(deals)} deals from address {from_address}\n"
-                f"  Current token balance: {token_balance_tokens} {token_name}\n"
-                f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_tokens} {token_name}\n"
-                f"  Total required funds for {len(deals)} deals for {months} months: {total_required_amount_tokens} {token_name}"):
+                f"\nDeposit {deposit_amount_str} {token_name} to FileCoinPay account for {len(deals)} deals from address {from_address}\n"
+                f"  Current token balance: {token_balance_str} {token_name}\n"
+                f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_str} {token_name}\n"
+                f"  Total required funds for {len(deals)} deals for {months} months: {total_required_amount_str} {token_name}"):
             #
             click.echo("Canceled!\n")
             return
@@ -77,9 +77,9 @@ def __deposit_for_all_deals(deals: list[PoRepMarketDealProposal], months: int, f
                                                     signed_msg.v, utils.int_to_bytes(signed_msg.r), utils.int_to_bytes(signed_msg.s),
                                                     from_private_key)
 
-        click.echo(f"Deposited {deposit_amount_tokens} {token_name}: {tx_hash}")
+        click.echo(f"Deposited {deposit_amount_str} {token_name}: {tx_hash}")
         return tx_hash
     else:
         click.echo(
-            f"Existing FileCoinPay funds {filecoinpay_available_funds_tokens} {token_name} is "
-            f"sufficient for total required deposit amount {total_required_amount_tokens} {token_name}")
+            f"Existing FileCoinPay funds {filecoinpay_available_funds_str} {token_name} is "
+            f"sufficient for total required deposit amount {total_required_amount_str} {token_name}")

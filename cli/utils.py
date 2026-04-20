@@ -117,17 +117,16 @@ def json_pretty(json_data):
 
 
 # converts 1100000000000000000 wei -> 1.1 ETH
-def to_tokens(amount: int | float, decimals: int) -> float:
+def from_wei(amount: int | float, decimals: int) -> float:
     return amount / (10 ** decimals)
 
 
-def to_tokens_str(amount: int | float, decimals: int) -> str:
-    return "{:.{}f}".format(to_tokens(amount, decimals), decimals)  # cannot be f-string because decimals is dynamic
+def str_from_wei(amount: int | float, decimals: int) -> str:
+    return "{:.{}f}".format(from_wei(amount, decimals), decimals)  # cannot be f-string because decimals is dynamic
 
 
 # converts 1.1 ETH -> 1100000000000000000 wei
-# TODO LATER rename this to to_wei and from_wei
-def from_tokens(amount: int | float, decimals: int) -> int:
+def to_wei(amount: int | float, decimals: int) -> int:
     result = amount * (10 ** decimals)
 
     if result != int(result):

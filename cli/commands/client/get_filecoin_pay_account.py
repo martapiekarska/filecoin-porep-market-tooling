@@ -24,7 +24,7 @@ def get_filecoin_pay_account(token_address: str):
         {
             "owner": str(client_address()),
             "token": _token_address,
-            "funds": f"{utils.to_tokens_str(account.funds, token_contract.decimals())} {token_contract.name()}",
+            "funds": f"{utils.str_from_wei(account.funds, token_contract.decimals())} {token_contract.name()}",
             "account": account.__dict__
         }
     ))
