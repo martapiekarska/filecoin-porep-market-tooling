@@ -12,7 +12,8 @@ CLIENT_PRIVATE_KEY: str | None = None
 @click.group()
 @click.option("--address", help="Client address to use.  [default: address from the private key]")
 @click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", show_envvar=True, hidden=True)
-@click.option("--confirm-info", is_flag=True, default=False, show_default=True, help="Confirm current account info before executing command.")
+@click.option("--confirm-info", is_flag=True, default=False, show_default=True,
+              help="Confirm current account info before executing command.  [default: false]")
 def client(address: str | None = None, private_key: str | None = None, confirm_info: bool = False):
     """
     Client commands for interacting with the PoRep Market.

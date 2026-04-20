@@ -172,7 +172,7 @@ def register_db_sps(db_url: str,
     1. Fetch and print SPs from SPRegistry database,
     2. register them one by one on-chain via SPRegistry contract.
 
-    DB_ID - SPRegistry database organization id to register SPs from. [default: SPs from all organizations eligible for registration]
+    DB_ID - SPRegistry database organization id to register SPs from.
     """
 
     _register_sps(

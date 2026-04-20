@@ -10,14 +10,14 @@ from cli.services.contracts.sp_registry import SPRegistry
 @click.command()
 @click.argument("state", required=False, type=click.Choice(PoRepMarketDealState.to_string_list(), case_sensitive=False))
 @click.option("--provider-id", required=False,
-              help="Provider id to filter deals by.  [default: all providers under current SP organization address]")
+              help="Provider id to filter deals by.")
 @click.option("--deal-id", required=False, type=click.IntRange(min=0),
-              help="Deal id to fetch.  [default: all deals]")
+              help="Deal id to fetch.")
 def get_deals(state: str | None = None, provider_id: str | None = None, deal_id: int | None = None):
     """
     Get deals for the current SP.
 
-    STATE - Deal state to filter by. [default: all states]
+    STATE - Deal state to filter by.
     """
 
     if deal_id is not None:
