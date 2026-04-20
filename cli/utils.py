@@ -152,7 +152,13 @@ def private_str_to_log_str(private_str: str | PrivateKeyType | None) -> str:
     if not private_str:
         return ""
 
-    _private_str = str(private_str)
+    if isinstance(private_str, bytes):
+        _private_str = "0x" + private_str.hex()
+    elif isinstance(private_str, int):
+        _private_str = hex(private_str)
+    else:
+        _private_str = str(private_str)
+
     hex_padding = 2 if _private_str.startswith("0x") else 0
 
     if len(_private_str) > 65:
