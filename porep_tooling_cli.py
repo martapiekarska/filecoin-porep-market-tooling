@@ -107,7 +107,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
     except Exception as e:
-        print_error("Internal error occurred: %s: %s\nSee %s for more logs." % (type(e).__name__, e, ERROR_LOG_FILE))
+        print_error("\n\n\nInternal error occurred: %s: %s\nSee %s for more logs." % (type(e).__name__, e, ERROR_LOG_FILE))
 
         # write ERROR_LOG_FILE
         try:

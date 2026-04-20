@@ -129,40 +129,73 @@ class ContractService:
 
         return self.w3.eth.send_raw_transaction(signed_tx.raw_transaction).to_0x_hex()
 
-    def _sign_and_send_tx(self, transaction, tx_params, from_private_key: str, dry_run: bool = False) -> str:
+    def _sign_and_send_tx(self, transaction, tx_params: dict, from_private_key: str, dry_run: bool = False) -> str:
         # transaction.args is sensitive info, should never be logged
         # tx_params.data is sensitive info, should never be logged
 
-        def tx_to_log_string(transaction, tx_params) -> str:
-            result = {
-                "chainId": tx_params["chainId"],
-                "from": tx_params["from"],
-                "to": tx_params["to"],
-                "signature": transaction.signature,
-                "nonce": tx_params["nonce"],
-                "gas": tx_params["gas"],
-                "value": tx_params["value"],
-            }
-
-            return utils.json_pretty(result)
+        try:
+            signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
+        except Exception as e:
+            raise Exception(f"Transaction signing failed: {str(e)}") from e
 
         try:
-            try:
-                signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
-            except Exception as e:
-                raise Exception(f"Transaction signing failed: {str(e)}") from e
+            tx_hash = self.__send_tx(signed_tx, dry_run)
+            self.logger.warning(f"Transaction sent: {tx_hash}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+            return tx_hash
+        except Exception as e:
+            self.logger.error(f"Transaction failed: {str(e)}: {ContractService.tx_to_log_string(transaction, tx_params)}")
+            raise Exception(f"Transaction failed: {str(e)}") from e
 
-            try:
-                tx_hash = self.__send_tx(signed_tx, dry_run)
-                self.logger.warning(f"Transaction sent: {tx_hash}: {tx_to_log_string(transaction, tx_params)}")
-                return tx_hash
-            except Exception as e:
-                self.logger.error(f"Transaction failed: {str(e)}: {tx_to_log_string(transaction, tx_params)}")
-                raise Exception(f"Transaction failed: {str(e)}") from e
+    def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
+        # transaction.args is sensitive info, should never be logged
+
+        from_address = self.w3.eth.account.from_key(from_private_key).address
+        nonce = ContractService.get_address_nonce(from_address, self.w3)
+        tx_params = None
+
+        try:
+            # tx_params.data is sensitive info, should never be logged
+            tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce})
+
+            _dry_run = is_dry_run()
+
+            if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
+                                          f"== Chain ID: {tx_params['chainId']}\n"
+                                          f"== Transaction:\n"
+                                          f"==   from: {tx_params['from']}\n"
+                                          f"==   to: {tx_params['to']}\n"
+                                          f"==   signature: {transaction.signature}\n"
+                                          f"==   nonce: {tx_params['nonce']}\n"
+                                          f"==   gas price: {self.w3.eth.gas_price} wei\n"
+                                          f"==   gas: {tx_params['gas']}\n"
+                                          f"==   value: {tx_params['value']} wei\n"
+                                          f"== This is the final confirmation", default_answer=_dry_run):
+                click.echo("Enabling dry-run mode. This transaction WILL NOT be executed.")
+                _dry_run = True
+
+            click.echo()
+            return self._sign_and_send_tx(transaction, tx_params, from_private_key, _dry_run)
         except ContractCustomError as cce:
             reason = self.__decode_contract_error_name(cce)
-            self.logger.error(f"Transaction reverted: {reason}: {tx_to_log_string(transaction, tx_params)}")
+            self.logger.error(f"Transaction reverted: {reason}: {ContractService.tx_to_log_string(transaction, tx_params)}")
             raise Exception(f"Transaction reverted: {reason}") from cce
+
+    @staticmethod
+    def tx_to_log_string(transaction, tx_params: dict | None) -> str:
+        result = {
+            "chainId": tx_params["chainId"],
+            "from": tx_params["from"],
+            "to": tx_params["to"],
+            "signature": transaction.signature,
+            "nonce": tx_params["nonce"],
+            "gas": tx_params["gas"],
+            "value": tx_params["value"],
+        } if tx_params else {
+            "to": transaction.address,
+            "signature": transaction.signature,
+        }
+
+        return utils.json_pretty(result)
 
     @staticmethod
     def get_w3() -> Web3:
@@ -197,31 +230,3 @@ class ContractService:
 
         except Exception as e:
             raise Exception(f"Failed to get nonce for address {from_address}: {str(e)}") from e
-
-    def sign_and_send_tx(self, transaction, from_private_key: str) -> str:
-        # transaction.args is sensitive info, should never be logged
-
-        from_address = self.w3.eth.account.from_key(from_private_key).address
-        nonce = ContractService.get_address_nonce(from_address, self.w3)
-
-        # tx_params.data is sensitive info, should never be logged
-        tx_params = transaction.build_transaction({"from": from_address, "nonce": nonce})
-
-        _dry_run = is_dry_run()
-
-        if not utils.ask_user_confirm(f"\n== DRY RUN: {_dry_run}\n"
-                                      f"== Chain ID: {tx_params['chainId']}\n"
-                                      f"== Transaction:\n"
-                                      f"==   from: {tx_params['from']}\n"
-                                      f"==   to: {tx_params['to']}\n"
-                                      f"==   signature: {transaction.signature}\n"
-                                      f"==   nonce: {tx_params['nonce']}\n"
-                                      f"==   gas price: {self.w3.eth.gas_price} wei\n"
-                                      f"==   gas: {tx_params['gas']}\n"
-                                      f"==   value: {tx_params['value']} wei\n"
-                                      f"== This is the final confirmation", default_answer=_dry_run):
-            click.echo("Enabling dry-run mode. This transaction WILL NOT be executed.")
-            _dry_run = True
-
-        click.echo()
-        return self._sign_and_send_tx(transaction, tx_params, from_private_key, _dry_run)
