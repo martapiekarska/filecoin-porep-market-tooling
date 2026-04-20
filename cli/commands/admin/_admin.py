@@ -18,11 +18,6 @@ def admin(address: str | None = None, private_key: str | None = None, confirm_in
     Admin commands for managing the PoRep Market.
     """
 
-    if private_key:
-        click.echo("Be aware that when using the [--private-key] option, the private key may be visible in the command history or process list.\n"
-                   "This is a default system behavior and is not specific to this app.\n"
-                   "Refer to README to learn more.\n")
-
     global ADMIN_PRIVATE_KEY
     ADMIN_PRIVATE_KEY = private_key
 
