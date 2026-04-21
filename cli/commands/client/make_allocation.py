@@ -16,7 +16,7 @@ BATCH_SIZE = 10
 DATACAP_DECIMALS = 18
 
 
-def _transfer_datacap(deal_id: int, start_batch: int, print_only: bool | None, from_private_key: PrivateKeyType):
+def _make_allocation(deal_id: int, start_batch: int, print_only: bool | None, from_private_key: PrivateKeyType):
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if deal.state != PoRepMarketDealState.ACCEPTED:
@@ -70,22 +70,22 @@ def _transfer_datacap(deal_id: int, start_batch: int, print_only: bool | None, f
 @click.argument("deal_id", type=click.IntRange(min=0))
 @click.option("--print-only", is_flag=True, default=False, show_default=True, help="Print transfer params without broadcasting.")
 @click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True, help="Batch index to start from (starting from 1).")
-def transfer_datacap(deal_id: int, start_batch: int, print_only: bool | None = None):
+def make_allocation(deal_id: int, start_batch: int, print_only: bool | None = None):
     """
-    Interactively transfer DataCap tokens for accepted deal to the SP in batches (groups).
+    Interactively make DDO allocation for accepted deal in batches (groups).
 
     DEAL_ID: ID of the deal to transfer DataCap for.
 
     \b
-    1. Fetch the deal proposal and manifest for the given DEAL_ID,
-    2. prepare transfer parameters for each batch of pieces,
-    3. transfer each batch of datacap to the SP until all batches are transferred,
-    4. IMPORTANT: mark deal as completed in the last batch transfer to allow SP to submit the proof and receive payment.
+    1. Fetch deal proposal and manifest for the given DEAL_ID,
+    2. prepare DataCap transfer parameters for each batch of pieces,
+    3. make Direct Data Onboarding (DDO) allocation for each batch using Client smart contract,
+    4. IMPORTANT: mark deal as completed in the last batch to allow SP to submit the proof and receive payment.
     """
 
     ContractService.wait_for_pending_transactions(client_address())
 
-    _transfer_datacap(deal_id, start_batch, print_only, client_private_key())
+    _make_allocation(deal_id, start_batch, print_only, client_private_key())
 
 
 def _build_operator_data_batch(provider_id: int, batch: list[tuple[str, int]], term_min: int, term_max: int, expiration: int) -> bytes:
