@@ -70,6 +70,10 @@ def _make_allocation(deal_id: int,
             tx_hash = client_contract.transfer(params, deal_id, is_completed, from_private_key)
             click.echo(f"params: {params}, tx={tx_hash}, deal_completed={is_completed}")
 
+            if tx_hash == ContractService.ZERO_TX_HASH:
+                click.echo("Cannot continue with dry-run mode, exiting.")
+                return
+
         click.echo(f"Batch {current_batch_number} done.")
 
     click.echo("\nAll done!")
@@ -78,9 +82,9 @@ def _make_allocation(deal_id: int,
 @click.command()
 @click.argument("deal_id", type=click.IntRange(min=0))
 @click.option("--print-only", is_flag=True, default=False, show_default=True,
-              help="Print transfer params without broadcasting.")
+              help="Print transfer params without broadcasting.  [default: False]")
 @click.option("--exclude-dag", is_flag=True, default=False, show_default=True,
-              help="Exclude manifest DAG piece. Default is to include it.")
+              help="Exclude manifest DAG piece. Default is to include it.  [default: False]")
 @click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True,
               help="Batch index to start from (starting from 1).")
 def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, exclude_dag: bool = False):

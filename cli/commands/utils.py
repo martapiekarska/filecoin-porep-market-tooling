@@ -16,6 +16,7 @@ def bytes_to_sectors(bytes_size: int) -> float:
 
 def get_all_deals(state: PoRepMarketDealState | str | None = None,
                   organization: Address | None = None) -> list[PoRepMarketDealProposal]:
+    #
     _state = PoRepMarketDealState.from_string(str(state)) if state else None
 
     if organization:

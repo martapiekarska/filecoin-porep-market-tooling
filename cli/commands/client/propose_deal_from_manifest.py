@@ -99,7 +99,7 @@ def _propose_deal_from_manifest(manifest_url: str,
 
 
 @click.command()
-@click.argument("manifest-url")
+@click.argument("manifest_url")
 @click.option("--retrievability-bps", type=click.IntRange(0, 10000), required=True,
               help="Retrievability guarantee in bps (basis points, e.g. 7550 = 75.50%); 0 means \"don't care\".")
 @click.option("--bandwidth-mbps", type=click.IntRange(0, 64000), required=True,
@@ -143,7 +143,7 @@ def propose_deal_from_manifest(manifest_url: str,
 
 # TODO LATER remove me
 @click.command(hidden=True)
-@click.argument("manifest-url", default="http://117.55.199.67:9090/api/preparation/fsboard/piece")
+@click.argument("manifest_url", default="http://117.55.199.67:9090/api/preparation/fsboard/piece")
 def propose_deal_from_manifest_mocked(manifest_url: str):
     retrievability_bps = 10
     bandwidth_mbps = 1

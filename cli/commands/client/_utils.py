@@ -140,6 +140,7 @@ def _fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> lis
 
         if not all(piece["attachmentId"] == pieces[0]["attachmentId"] for piece in pieces):
             raise ValueError("Invalid attachmentId in manifest pieces: must be the same for all pieces")
+        #
     except KeyError as e:
         raise ValueError(f"Invalid manifest format: missing key {e}") from e
 

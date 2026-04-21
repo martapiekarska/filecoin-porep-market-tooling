@@ -15,9 +15,12 @@ from cli.services.contracts.validator_factory import ValidatorFactory
 
 
 @click.command()
-def init_accepted_deals():
+@click.argument("deal_id", type=click.IntRange(min=0), required=False)
+def init_accepted_deals(deal_id: int | None = None):
     """
     Interactively initialize accepted deals.
+
+    DEAL_ID - Optional deal id to initialize. If not provided, will initialize all accepted deals for the client address.
 
     \b
     1. Deploy and initialize validator,
@@ -25,16 +28,19 @@ def init_accepted_deals():
     3. initialize FileCoinPay rail.
     """
 
-    _init_accepted_deals(client_private_key())
+    _init_accepted_deals(client_private_key(), deal_id)
 
 
 # TODO LATER print deal state at the end?
-def _init_accepted_deals(from_private_key: PrivateKeyType):
+def _init_accepted_deals(from_private_key: PrivateKeyType, deal_id: int | None = None):
     from_address = Address.from_private_key(from_private_key)
     ContractService.wait_for_pending_transactions(from_address)
 
-    accepted_deals = client_utils.get_client_deals(from_address, PoRepMarketDealState.ACCEPTED)
-    click.echo(f"Found {len(accepted_deals)} accepted deals for client_address {from_address}\n")
+    if deal_id is not None:
+        accepted_deals = [PoRepMarket().get_deal_proposal(deal_id)]
+    else:
+        accepted_deals = client_utils.get_client_deals(from_address, PoRepMarketDealState.ACCEPTED)
+        click.echo(f"Found {len(accepted_deals)} accepted deals for client_address {from_address}\n")
 
     for deal in accepted_deals:
         click.echo(f"\nDeal id {deal.deal_id}: {utils.json_pretty(deal)}\n")
@@ -53,10 +59,14 @@ def _init_accepted_deals(from_private_key: PrivateKeyType):
 
 
 def _deploy_and_set_validator(deal_id: int, from_private_key: PrivateKeyType) -> str | None:
+    from_address = Address.from_private_key(from_private_key)
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if not deal:
         raise Exception(f"Deal id {deal_id} not found")
+
+    if deal.client_address != from_address:
+        raise Exception(f"Deal id {deal_id} client address {deal.client_address} does not match from address {from_address}")
 
     if deal.state != PoRepMarketDealState.ACCEPTED:
         raise Exception(f"Deal id {deal.deal_id} is not in ACCEPTED state")

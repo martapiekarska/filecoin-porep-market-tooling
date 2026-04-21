@@ -76,6 +76,8 @@ class Address(str):
 
 
 class ContractService:
+    ZERO_TX_HASH = "0x" + "00" * 32
+
     def __init__(self, contract_address: Address, contract_abi_path: str):
         self.logger = logging.getLogger(self._get_class_name())
 
@@ -145,7 +147,7 @@ class ContractService:
         signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
 
         if dry_run:
-            return "0x" + "00" * 32
+            return ContractService.ZERO_TX_HASH
 
         # NOT DRY RUN, SENDING TRANSACTION
 

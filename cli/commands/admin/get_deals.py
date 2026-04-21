@@ -7,8 +7,7 @@ from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarke
 
 @click.command()
 @click.argument("state", required=False, type=click.Choice(PoRepMarketDealState.to_string_list(), case_sensitive=False))
-@click.option("--deal-id", required=False, type=click.IntRange(min=0),
-              help="Deal id to fetch.")
+@click.option("--deal-id", required=False, type=click.IntRange(min=0), help="Deal id to fetch.")
 def get_deals(state: str | None, deal_id: int | None = None):
     """
     Get all deals.

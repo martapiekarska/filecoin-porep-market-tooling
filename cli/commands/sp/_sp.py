@@ -68,7 +68,7 @@ def _info():
 
 @click.command()
 @click.option("--test-keys", is_flag=True, default=False, show_default=True,
-              help="Fail if the private key does not matches provided address.")
+              help="Fail if the private key does not matches provided address.  [default: False]")
 def info(test_keys: bool = False):
     """
     Display the current SP info.
