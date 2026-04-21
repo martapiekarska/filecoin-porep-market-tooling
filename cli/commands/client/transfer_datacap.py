@@ -13,6 +13,7 @@ from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarke
 EPOCHS_PER_DAY = 60 * 24 * 2
 EPOCHS_PER_MONTH = EPOCHS_PER_DAY * 30
 BATCH_SIZE = 10
+DATACAP_DECIMALS = 18
 
 
 def _transfer_datacap(deal_id: int, start_batch: int, print_only: bool | None, from_private_key: PrivateKeyType):
@@ -48,7 +49,7 @@ def _transfer_datacap(deal_id: int, start_batch: int, print_only: bool | None, f
 
         params = ClientContract.TransferParams(
             to=(b"\x00\x06",),
-            amount=(utils.uint_to_bytes(total_size, size=None), False),
+            amount=(utils.uint_to_bytes(utils.to_wei(total_size, DATACAP_DECIMALS), size=None), False),
             operator_data=operator_data,
         )
 
