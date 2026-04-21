@@ -86,6 +86,8 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list
 
 
 def _fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list[dict]:
+    MINIMUM_DAG_PIECE_SIZE_BYTES = 1024 * 1024  # 1 MiB
+
     # download manifest
     resp = requests.get(manifest_url, timeout=30)
     resp.raise_for_status()
@@ -140,6 +142,10 @@ def _fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> lis
 
         if not all(piece["attachmentId"] == pieces[0]["attachmentId"] for piece in pieces):
             raise ValueError("Invalid attachmentId in manifest pieces: must be the same for all pieces")
+
+        if dag_pieces[0]["pieceSize"] < MINIMUM_DAG_PIECE_SIZE_BYTES:
+            raise ValueError(f"Invalid dag piece size in manifest: must be at least 1 MiB "
+                             f"({dag_pieces[0]['pieceSize']} < {MINIMUM_DAG_PIECE_SIZE_BYTES} bytes)")
         #
     except KeyError as e:
         raise ValueError(f"Invalid manifest format: missing key {e}") from e
