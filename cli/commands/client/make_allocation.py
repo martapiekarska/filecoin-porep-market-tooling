@@ -16,14 +16,23 @@ BATCH_SIZE = 10
 DATACAP_DECIMALS = 18
 
 
-def _make_allocation(deal_id: int, start_batch: int, print_only: bool | None, from_private_key: PrivateKeyType):
+def _make_allocation(deal_id: int,
+                     start_batch: int,
+                     print_only: bool,
+                     from_private_key: PrivateKeyType,
+                     exclude_dag: bool):
+    #
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if deal.state != PoRepMarketDealState.ACCEPTED:
         raise Exception(f"Deal id {deal_id} is not in ACCEPTED state")
 
     manifest = client_utils.fetch_manifest(deal.manifest_location, show_manifest=False)
-    pieces = [piece for attachment in manifest for piece in attachment["pieces"]]
+    pieces = manifest[0]["pieces"]
+
+    if exclude_dag:
+        pieces = [piece for piece in pieces if piece["pieceType"] != "dag"]
+
     batches = _batch_pieces(pieces)
     deal_duration = deal.terms.duration_days * EPOCHS_PER_DAY
     client_contract = ClientContract()
@@ -68,9 +77,13 @@ def _make_allocation(deal_id: int, start_batch: int, print_only: bool | None, fr
 
 @click.command()
 @click.argument("deal_id", type=click.IntRange(min=0))
-@click.option("--print-only", is_flag=True, default=False, show_default=True, help="Print transfer params without broadcasting.")
-@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True, help="Batch index to start from (starting from 1).")
-def make_allocation(deal_id: int, start_batch: int, print_only: bool | None = None):
+@click.option("--print-only", is_flag=True, default=False, show_default=True,
+              help="Print transfer params without broadcasting.")
+@click.option("--exclude-dag", is_flag=True, default=False, show_default=True,
+              help="Exclude manifest DAG piece. Default is to include it.")
+@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True,
+              help="Batch index to start from (starting from 1).")
+def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, exclude_dag: bool = False):
     """
     Interactively make DDO allocation for accepted deal in batches (groups).
 
@@ -85,7 +98,7 @@ def make_allocation(deal_id: int, start_batch: int, print_only: bool | None = No
 
     ContractService.wait_for_pending_transactions(client_address())
 
-    _make_allocation(deal_id, start_batch, print_only, client_private_key())
+    _make_allocation(deal_id, start_batch, print_only, client_private_key(), exclude_dag)
 
 
 def _build_operator_data_batch(provider_id: int, batch: list[tuple[str, int]], term_min: int, term_max: int, expiration: int) -> bytes:
