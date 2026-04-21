@@ -77,18 +77,33 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
 def fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list[dict]:
     click.echo(f"Fetching manifest from {manifest_url}")
 
+    while True:
+        try:
+            return _fetch_manifest(manifest_url, show_manifest)
+        except requests.exceptions.RequestException as e:
+            if not utils.ask_user_confirm(f"\nFailed to fetch manifest:\n{e}.\nRetry?", default_answer=True):
+                raise Exception(f"Network error while fetching manifest: {e}") from e
+
+
+def _fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list[dict]:
+    # download manifest
+    resp = requests.get(manifest_url, timeout=30)
+    resp.raise_for_status()
+
     try:
-        # download manifest
-        manifest = requests.get(manifest_url, timeout=30).json()
-        click.echo("Manifest downloaded")
+        manifest = resp.json()
+    except ValueError as e:
+        raise ValueError(f"Manifest is not a valid JSON: {e}") from e
 
-        # show manifest
-        if show_manifest or (show_manifest is None and utils.ask_user_confirm("Show manifest?", default_answer=False)):
-            _manifest = utils.json_pretty(manifest)
-            click.echo_via_pager("\n".join([f"{i + 1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
+    click.echo("Manifest downloaded")
 
+    # show manifest
+    if show_manifest or (show_manifest is None and utils.ask_user_confirm("Show manifest?", default_answer=False)):
+        _manifest = utils.json_pretty(manifest)
+        click.echo_via_pager("\n".join([f"{i + 1}. {line}" for i, line in enumerate(_manifest.splitlines())]))
         click.echo()
 
+    try:
         # validate manifest format
         if not (
                 manifest and
@@ -106,10 +121,11 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list
                     "pieceCid" in piece and
                     "pieceType" in piece and
                     "pieceSize" in piece and
-                    "preparationId" in piece for piece in
-                    manifest[0]["pieces"])
+                    "preparationId" in piece and
+                    "attachmentId" in piece
+                    for piece in manifest[0]["pieces"])
         ):
-            raise Exception("Invalid manifest format")
+            raise ValueError("Invalid manifest format")
 
         # validate manifest pieces
         pieces = manifest[0]["pieces"]
@@ -117,11 +133,14 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None) -> list
         dag_pieces = [piece for piece in pieces if piece["pieceType"] == "dag"]
 
         if len(pieces) <= 1 or len(data_pieces) != len(pieces) - 1 or len(dag_pieces) != 1:
-            raise Exception("Invalid manifest pieces: must contain exactly one dag piece and at least one data piece")
+            raise ValueError("Invalid manifest pieces: must contain exactly one dag piece and at least one data piece")
 
         if not all(piece["preparationId"] == pieces[0]["preparationId"] for piece in pieces):
-            raise Exception("Invalid preparationId in manifest pieces: must be the same for all pieces")
+            raise ValueError("Invalid preparationId in manifest pieces: must be the same for all pieces")
 
-        return manifest
-    except Exception as e:
-        raise Exception(f"Error fetching manifest: {e}") from e
+        if not all(piece["attachmentId"] == pieces[0]["attachmentId"] for piece in pieces):
+            raise ValueError("Invalid attachmentId in manifest pieces: must be the same for all pieces")
+    except KeyError as e:
+        raise ValueError(f"Invalid manifest format: missing key {e}") from e
+
+    return manifest
