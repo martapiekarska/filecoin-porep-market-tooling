@@ -1,4 +1,3 @@
-from cli.utils import json_pretty
 from urllib.parse import ParseResult
 from requests.compat import urlunparse
 import ipaddress
