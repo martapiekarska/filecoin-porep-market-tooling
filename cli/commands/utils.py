@@ -14,13 +14,14 @@ from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarke
 # TODO LATER take sector size from smart contracts
 SECTOR_SIZE_BYTES = 32 * 1024 ** 3  # 32 GiB
 
+# pylint: disable=invalid-name
 @utils.json_dataclass()
 class ManifestPiece:
     id: int
     createdAt: str
-    pieceType: str       
-    pieceCid: str         
-    pieceSize: int       
+    pieceType: str
+    pieceCid: str
+    pieceSize: int
     rootCid: str
     fileSize: int
     minPieceSizePadding: int
@@ -53,6 +54,7 @@ class DealManifestConfig:
     unicode_normalization: str
     zero_size_links: str
 
+# pylint: disable=invalid-name
 @utils.json_dataclass()
 class DealManifestSource:
     id: int
@@ -64,6 +66,7 @@ class DealManifestSource:
     config: DealManifestConfig
     clientConfig: dict
 
+# pylint: disable=invalid-name
 @utils.json_dataclass()
 class _DealManifest:
     attachmentId: int
@@ -235,6 +238,6 @@ def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, 
         #
     except KeyError as e:
         raise ValueError(f"Invalid manifest format: missing key {e}") from e
-    
+
     # TODO return DealManifest type here
     return manifest

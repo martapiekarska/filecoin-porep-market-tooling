@@ -8,16 +8,18 @@ from cli.commands import utils as commands_utils
 from cli.services.contracts.client_contract import ClientContract
 from cli.services.contracts.porep_market import PoRepMarket
 
+# pylint: disable=invalid-name
 @utils.json_dataclass()
 class StateAllocation:
-    Client: int       
-    Provider: int     
-    Data: dict        
-    Size: int         
-    TermMin: int      
-    TermMax: int      
-    Expiration: int 
+    Client: int
+    Provider: int
+    Data: dict
+    Size: int
+    TermMin: int
+    TermMax: int
+    Expiration: int
 
+# pylint: disable=invalid-name
 @utils.json_dataclass()
 class AllocationAggregate:
     allocationId: int
