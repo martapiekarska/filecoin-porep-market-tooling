@@ -1,5 +1,4 @@
 from urllib.parse import ParseResult
-from requests.compat import urlunparse
 import ipaddress
 import socket
 from requests.compat import urlparse
@@ -157,11 +156,13 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries
 
 def _get_manifest_hostname(manifest_url: str) -> ParseResult:
     parsed = urlparse(manifest_url)
+
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("Manifest URL must use http/https")
 
     ip = socket.gethostbyname(parsed.hostname)
     addr = ipaddress.ip_address(ip)
+
     if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local or addr.is_multicast:
         raise ValueError(f"Manifest URL resolves to a disallowed IP address: {ip}")
 
@@ -172,10 +173,7 @@ def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, 
     MINIMUM_DAG_PIECE_SIZE_BYTES = 1024 * 1024  # 1 MiB
 
     # download manifest
-    ip = socket.gethostbyname(parsed_url.hostname)
-    netloc = f"{ip}:{parsed_url.port}" if parsed_url.port else ip
-    ip_url = urlunparse(parsed_url._replace(netloc=netloc))
-    resp = requests.get(ip_url, headers={"Host": parsed_url.hostname}, timeout=30)
+    resp = requests.get(parsed_url.geturl(), headers={"Host": parsed_url.hostname}, timeout=30)
     resp.raise_for_status()
 
     try:
