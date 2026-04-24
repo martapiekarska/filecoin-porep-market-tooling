@@ -1,12 +1,12 @@
-from cli.services.contracts.rpc_utils import RPCUtils
-from cli.commands.utils import ManifestPiece
-
 import click
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.commands.utils import ManifestPiece
 from cli.services.contracts.client_contract import ClientContract
 from cli.services.contracts.porep_market import PoRepMarket
+from cli.services.contracts.rpc_utils import RPCUtils
+
 
 # pylint: disable=invalid-name
 @utils.json_dataclass()
@@ -19,11 +19,13 @@ class StateAllocation:
     TermMax: int
     Expiration: int
 
+
 # pylint: disable=invalid-name
 @utils.json_dataclass()
 class AllocationAggregate:
     allocationId: int
     CID: str
+
 
 @click.command()
 @click.argument("deal_id", type=click.IntRange(min=0))
@@ -45,11 +47,13 @@ def get_allocations(deal_id: int):
 
     click.echo(utils.json_pretty(aggregated_allocations))
 
+
 def aggregate_allocations(state_allocations: list[StateAllocation], client_allocations: list[int], pieces: list[ManifestPiece]) -> list[AllocationAggregate]:
     manifest_cids = {p["pieceCid"] for p in pieces}
+
     return [
         {"allocationId": alloc_id, "CID": state_allocations[str(alloc_id)].get("Data", {}).get("/")}
         for alloc_id in client_allocations
         if str(alloc_id) in state_allocations
-        and state_allocations[str(alloc_id)].get("Data", {}).get("/") in manifest_cids
+           and state_allocations[str(alloc_id)].get("Data", {}).get("/") in manifest_cids
     ]

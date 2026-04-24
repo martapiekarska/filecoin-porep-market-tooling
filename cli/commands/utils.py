@@ -1,7 +1,8 @@
-from urllib.parse import ParseResult
 import ipaddress
 import socket
-from requests.compat import urlparse
+from urllib.parse import ParseResult
+from urllib.parse import urlparse
+
 import click
 import requests
 from eth_account.types import PrivateKeyType
@@ -13,6 +14,7 @@ from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarke
 
 # TODO LATER take sector size from smart contracts
 SECTOR_SIZE_BYTES = 32 * 1024 ** 3  # 32 GiB
+
 
 # pylint: disable=invalid-name
 @utils.json_dataclass()
@@ -31,6 +33,7 @@ class ManifestPiece:
     preparationId: int
     attachmentId: int
     jobId: int
+
 
 @utils.json_dataclass()
 class DealManifestConfig:
@@ -54,6 +57,7 @@ class DealManifestConfig:
     unicode_normalization: str
     zero_size_links: str
 
+
 # pylint: disable=invalid-name
 @utils.json_dataclass()
 class DealManifestSource:
@@ -66,6 +70,7 @@ class DealManifestSource:
     config: DealManifestConfig
     clientConfig: dict
 
+
 # pylint: disable=invalid-name
 @utils.json_dataclass()
 class _DealManifest:
@@ -76,6 +81,7 @@ class _DealManifest:
 
 
 DealManifest = list[_DealManifest]
+
 
 def bytes_to_sectors(bytes_size: int) -> float:
     return bytes_size / SECTOR_SIZE_BYTES
@@ -176,7 +182,7 @@ def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, 
     MINIMUM_DAG_PIECE_SIZE_BYTES = 1024 * 1024  # 1 MiB
 
     # download manifest
-    resp = requests.get(parsed_url.geturl(), headers={"Host": parsed_url.hostname}, timeout=30)
+    resp = requests.get(parsed_url.geturl(), headers={"Host": parsed_url.hostname}, timeout=30, allow_redirects=False)
     resp.raise_for_status()
 
     try:

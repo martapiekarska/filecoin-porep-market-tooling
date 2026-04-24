@@ -61,6 +61,9 @@ class Address(str):
         if "error" in response:
             raise Exception(response["error"])
 
+        if not response["result"]:
+            raise Exception(f"Failed to get actor ID for address {self}: empty result")
+
         return utils.f0_str_id_to_int(response["result"])
 
     @staticmethod
