@@ -14,7 +14,7 @@ def get_registered_info(provider_id: str | None = None):
     PROVIDER_ID - Provider id to query.
     """
 
-    _provider_id = utils.f0_str_id_to_int(provider_id)
+    _provider_id = utils.f0_str_id_to_int(provider_id) if provider_id else None
 
     click.echo(utils.json_pretty(
         [SPRegistry().get_provider_info(_provider_id)] if _provider_id else

@@ -176,10 +176,7 @@ def private_str_to_log_str(private_str: str | PrivateKeyType | None) -> str:
 
 
 # converts Filecoin ID "f01234" to integer ID 1234
-def f0_str_id_to_int(f_id: str | None) -> int | None:
-    if f_id is None:
-        return None
-
+def f0_str_id_to_int(f_id: str) -> int:
     if f_id.startswith("f0"):
         result = int(f_id[2:])
     else:
@@ -192,10 +189,7 @@ def f0_str_id_to_int(f_id: str | None) -> int | None:
 
 
 # converts integer ID 1234 to Filecoin ID "f01234"
-def int_id_to_f0_str(int_id: int | None) -> str | None:
-    if int_id is None:
-        return None
-
+def int_id_to_f0_str(int_id: int) -> str:
     if int_id < 0:
         raise ValueError(f"Invalid int_id: {int_id}")
 

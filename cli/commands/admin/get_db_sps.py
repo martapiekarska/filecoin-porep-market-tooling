@@ -34,7 +34,7 @@ def get_db_sps(db_url: str,
             kyc_status="approved" if (not show_all and not db_id) else None,
             organization_id=db_id,
             indexing_pct=indexing_pct,
-            miner_id=utils.f0_str_id_to_int(miner_id),
+            miner_id=utils.f0_str_id_to_int(miner_id) if miner_id else None,
             organization_address=organization_address,
         )
     ))

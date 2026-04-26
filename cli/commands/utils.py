@@ -87,6 +87,7 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries
                     raise click.ClickException(f"Network error while fetching manifest: {e}") from e
 
             else:
+                # noinspection PyUnresolvedReferences
                 if retries <= 0:
                     raise click.ClickException(f"Network error while fetching manifest: {e}") from e
                 else:
@@ -105,6 +106,7 @@ def _get_manifest_hostname(manifest_url: str) -> ParseResult:
     if not parsed.hostname:
         raise RuntimeError("Manifest URL must have a hostname")
 
+    # noinspection PyTypeChecker
     ip = socket.gethostbyname(parsed.hostname)
     addr = ipaddress.ip_address(ip)
 

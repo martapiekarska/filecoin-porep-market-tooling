@@ -6,7 +6,7 @@ from eth_account.types import PrivateKeyType
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_private_key, client_address
-from cli.services.contracts.client_contract import ClientContract
+from cli.services.contracts.client_contract import ClientContract, TransferParams
 from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarket
 
@@ -14,6 +14,32 @@ EPOCHS_PER_DAY = 60 * 24 * 2
 EPOCHS_PER_MONTH = EPOCHS_PER_DAY * 30
 BATCH_SIZE = 10
 DATACAP_DECIMALS = 18
+
+
+@click.command()
+@click.argument("deal_id", type=click.IntRange(min=0))
+@click.option("--print-only", is_flag=True, default=False, show_default=True,
+              help="Print transfer params without broadcasting.  [default: False]")
+@click.option("--exclude-dag", is_flag=True, default=False, show_default=True,
+              help="Exclude manifest DAG piece. Default is to include it.  [default: False]")
+@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True,
+              help="Batch index to start from (starting from 1).")
+def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, exclude_dag: bool = False):
+    """
+    Interactively make DDO allocation for accepted deal in batches (groups).
+
+    DEAL_ID: ID of the deal to transfer DataCap for.
+
+    \b
+    1. Fetch deal proposal and manifest for the given DEAL_ID,
+    2. prepare DataCap transfer parameters for each batch of pieces,
+    3. make Direct Data Onboarding (DDO) allocation for each batch using Client smart contract,
+    4. IMPORTANT: mark deal as completed in the last batch to allow SP to submit the proof and receive payment.
+    """
+
+    ContractService.wait_for_pending_transactions(client_address())
+
+    _make_allocation(deal_id, start_batch, print_only, client_private_key(), exclude_dag)
 
 
 def _make_allocation(deal_id: int,
@@ -56,7 +82,8 @@ def _make_allocation(deal_id: int,
 
         total_size = sum(size for _, size in batch)
 
-        params = ClientContract.TransferParams(
+        # noinspection PyArgumentList
+        params = TransferParams(
             to=(b"\x00\x06",),
             amount=(utils.uint_to_bytes(utils.to_wei(total_size, DATACAP_DECIMALS), size=None), False),
             operator_data=operator_data,
@@ -77,32 +104,6 @@ def _make_allocation(deal_id: int,
         click.echo(f"Batch {current_batch_number} done.")
 
     click.echo("\nAll done!")
-
-
-@click.command()
-@click.argument("deal_id", type=click.IntRange(min=0))
-@click.option("--print-only", is_flag=True, default=False, show_default=True,
-              help="Print transfer params without broadcasting.  [default: False]")
-@click.option("--exclude-dag", is_flag=True, default=False, show_default=True,
-              help="Exclude manifest DAG piece. Default is to include it.  [default: False]")
-@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True,
-              help="Batch index to start from (starting from 1).")
-def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, exclude_dag: bool = False):
-    """
-    Interactively make DDO allocation for accepted deal in batches (groups).
-
-    DEAL_ID: ID of the deal to transfer DataCap for.
-
-    \b
-    1. Fetch deal proposal and manifest for the given DEAL_ID,
-    2. prepare DataCap transfer parameters for each batch of pieces,
-    3. make Direct Data Onboarding (DDO) allocation for each batch using Client smart contract,
-    4. IMPORTANT: mark deal as completed in the last batch to allow SP to submit the proof and receive payment.
-    """
-
-    ContractService.wait_for_pending_transactions(client_address())
-
-    _make_allocation(deal_id, start_batch, print_only, client_private_key(), exclude_dag)
 
 
 def _build_operator_data_batch(provider_id: int, batch: list[tuple[str, int]], term_min: int, term_max: int, expiration: int) -> bytes:

@@ -106,6 +106,6 @@ def onboard_data(deal_id: int, output_dir: str, jobs: int):
             )
             #
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"aria2c failed with exit code {e.returncode}")
+            raise RuntimeError(f"aria2c failed with exit code {e.returncode}") from e
     finally:
         aria2_file.unlink(missing_ok=True)
