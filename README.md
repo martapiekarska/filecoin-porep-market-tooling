@@ -25,10 +25,8 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
 ## Important notes
 
-- The app **does not store any state** locally - all state is retrieved from the blockchain by the design.
+- The app **does not store any state** locally - all state is retrieved from the blockchain by design.
 - The app stores all blockchain transaction logs to `logs/`.
-- All blockchain transactions **require manual user confirmation** before sending. There is no option to override this. \
-  If you decline the final confirmation, the command falls back to dry-run behavior without broadcasting the transaction.
 - Default behaviour is to wait for each transaction to succeed after sending it.
 - The app operates on EVM 0x-addresses and **FEVM smart contract** and does not fully support Filecoin f-addresses.
 - There are 3 ways of providing the user's private key for blockchain transactions and the priority is as follows:
@@ -52,6 +50,8 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
 ## Security considerations
 
+- All blockchain transactions **require manual user confirmation** before sending. There is no option to override this. \
+  If you decline the final confirmation, the command falls back to dry-run behavior without broadcasting the transaction.
 - The app runs locally and does not transmit any data to external servers besides blockchain. \
   All interactions are between the user's machine and the provided `RPC_URL` blockchain.
 - The app does not log any sensitive information neither to the console nor to the log files. \
@@ -67,5 +67,9 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
 ## Developing new CLI commands
 
-See files in `cli/commands` and follow the patterns! Also, see `./cli/test.sh`! \
-Use `Exception` (`ValueError`, `RuntimeError`, ...) for internal-like errors and click.ClickException for user-like errors.
+- See files in `cli/commands` for examples of how to implement new commands.
+- Keep the code clean and simple, follow the existing patterns and best practices.
+- Use `Exception` (`ValueError`, `RuntimeError`, ...) for internal-like errors (things that "should not happen")
+  and `click.ClickException` for user-like errors (things that happens "because of the user").
+- Use `click.echo` for all user-facing output and `logger` for file logging.
+- For read-only commands, print the output in json format for easy parsing by other tools.

@@ -16,73 +16,6 @@ from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarke
 SECTOR_SIZE_BYTES = 32 * 1024 ** 3  # 32 GiB
 
 
-# pylint: disable=invalid-name
-@utils.json_dataclass()
-class ManifestPiece:
-    id: int
-    createdAt: str
-    pieceType: str
-    pieceCid: str
-    pieceSize: int
-    rootCid: str
-    fileSize: int
-    minPieceSizePadding: int
-    storageId: int
-    storagePath: str
-    numOfFiles: int
-    preparationId: int
-    attachmentId: int
-    jobId: int
-
-
-@utils.json_dataclass()
-class DealManifestConfig:
-    case_insensitive: str
-    case_sensitive: str
-    copy_links: str
-    description: str
-    encoding: str
-    hashes: str
-    links: str
-    no_check_updated: str
-    no_clone: str
-    no_preallocate: str
-    no_set_modtime: str
-    no_sparse: str
-    nounc: str
-    one_file_system: str
-    skip_links: str
-    skip_specials: str
-    time_type: str
-    unicode_normalization: str
-    zero_size_links: str
-
-
-# pylint: disable=invalid-name
-@utils.json_dataclass()
-class DealManifestSource:
-    id: int
-    name: str
-    createdAt: str
-    updatedAt: str
-    type: str
-    path: str
-    config: DealManifestConfig
-    clientConfig: dict
-
-
-# pylint: disable=invalid-name
-@utils.json_dataclass()
-class _DealManifest:
-    attachmentId: int
-    storageId: int
-    source: DealManifestSource
-    pieces: list[ManifestPiece]
-
-
-DealManifest = list[_DealManifest]
-
-
 def bytes_to_sectors(bytes_size: int) -> float:
     return bytes_size / SECTOR_SIZE_BYTES
 
@@ -139,7 +72,7 @@ def validate_address_matches_private_key(address: Address, private_key: PrivateK
 
 
 # retries = None means "ask user"
-def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries: int | None = None, quiet: bool = False) -> DealManifest:
+def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries: int | None = None, quiet: bool = False) -> list[dict]:
     if not quiet:
         click.echo(f"Fetching manifest from {manifest_url}")
 
@@ -169,6 +102,9 @@ def _get_manifest_hostname(manifest_url: str) -> ParseResult:
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise click.ClickException("Manifest URL must use http/https")
 
+    if not parsed.hostname:
+        raise RuntimeError("Manifest URL must have a hostname")
+
     ip = socket.gethostbyname(parsed.hostname)
     addr = ipaddress.ip_address(ip)
 
@@ -178,7 +114,7 @@ def _get_manifest_hostname(manifest_url: str) -> ParseResult:
     return parsed
 
 
-def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, quiet: bool = False) -> DealManifest:
+def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, quiet: bool = False) -> list[dict]:
     MINIMUM_DAG_PIECE_SIZE_BYTES = 1024 * 1024  # 1 MiB
 
     # download manifest
@@ -245,5 +181,4 @@ def _fetch_manifest(parsed_url: ParseResult, show_manifest: bool | None = None, 
     except KeyError as e:
         raise click.ClickException(f"Invalid manifest format: missing key {e}") from e
 
-    # TODO return DealManifest type here
     return manifest

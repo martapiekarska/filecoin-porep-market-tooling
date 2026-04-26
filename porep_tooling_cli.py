@@ -14,7 +14,7 @@ _ = __future__
 
 LOG_FILE = "logs/logs.log"
 ERROR_LOG_FILE = "logs/error.logs"
-DEBUG = False
+DEBUG = True
 
 
 def configure_logger():

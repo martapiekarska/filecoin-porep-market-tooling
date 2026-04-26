@@ -1,30 +1,12 @@
+from typing import Dict
+
 import click
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.utils import ManifestPiece
 from cli.services.contracts import rpc_utils
 from cli.services.contracts.client_contract import ClientContract
 from cli.services.contracts.porep_market import PoRepMarket
-
-
-# pylint: disable=invalid-name
-@utils.json_dataclass()
-class StateAllocation:
-    Client: int
-    Provider: int
-    Data: dict
-    Size: int
-    TermMin: int
-    TermMax: int
-    Expiration: int
-
-
-# pylint: disable=invalid-name
-@utils.json_dataclass()
-class AllocationAggregate:
-    allocationId: int
-    CID: str
 
 
 @click.command()
@@ -48,12 +30,11 @@ def get_allocations(deal_id: int):
     click.echo(utils.json_pretty(aggregated_allocations))
 
 
-def aggregate_allocations(state_allocations: list[StateAllocation], client_allocations: list[int], pieces: list[ManifestPiece]) -> list[AllocationAggregate]:
+def aggregate_allocations(state_allocations: Dict[str, dict], client_allocations: list[int], pieces: list[dict]) -> list[dict]:
     manifest_cids = {p["pieceCid"] for p in pieces}
 
     return [
         {"allocationId": alloc_id, "CID": state_allocations[str(alloc_id)].get("Data", {}).get("/")}
         for alloc_id in client_allocations
-        if str(alloc_id) in state_allocations
-           and state_allocations[str(alloc_id)].get("Data", {}).get("/") in manifest_cids
+        if str(alloc_id) in state_allocations and state_allocations[str(alloc_id)].get("Data", {}).get("/") in manifest_cids
     ]
