@@ -171,6 +171,10 @@ def get_db_sps(db_url: str,
     if miner_id is not None and result:
         result = [sp for sp in result if sp.provider_id == miner_id]
 
+    provider_ids = [sp.provider_id for sp in result]
+    if len(provider_ids) != len(set(provider_ids)):
+        raise click.ClickException(f"Duplicated miner_id in SPRegistry database: {set(provider_ids)}")
+
     return result
 
 

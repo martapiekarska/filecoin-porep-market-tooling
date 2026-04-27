@@ -6,9 +6,10 @@ from eth_account.types import PrivateKeyType
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_private_key, client_address
+from cli.services import rpc_utils
 from cli.services.contracts.client_contract import ClientContract, TransferParams
 from cli.services.contracts.contract_service import ContractService
-from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarket
+from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 
 EPOCHS_PER_DAY = 60 * 24 * 2
 EPOCHS_PER_MONTH = EPOCHS_PER_DAY * 30
@@ -22,11 +23,9 @@ DATACAP_DECIMALS = 18
               help="Print transfer params without broadcasting.  [default: False]")
 @click.option("--exclude-dag", is_flag=True, default=False, show_default=True,
               help="Exclude manifest DAG piece. Default is to include it.  [default: False]")
-@click.option("--start-batch", type=click.IntRange(min=1), default=1, show_default=True,
-              help="Batch index to start from (starting from 1).")
-def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, exclude_dag: bool = False):
+def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool = False):
     """
-    Interactively make DDO allocation for accepted deal in batches (groups).
+    Interactively make DDO allocations for accepted deal in batches (groups).
 
     DEAL_ID: ID of the deal to transfer DataCap for.
 
@@ -39,14 +38,13 @@ def make_allocation(deal_id: int, start_batch: int, print_only: bool = False, ex
 
     ContractService.wait_for_pending_transactions(client_address())
 
-    _make_allocation(deal_id, start_batch, print_only, client_private_key(), exclude_dag)
+    _make_allocations(deal_id, print_only, client_private_key(), exclude_dag)
 
 
-def _make_allocation(deal_id: int,
-                     start_batch: int,
-                     print_only: bool,
-                     from_private_key: PrivateKeyType,
-                     exclude_dag: bool):
+def _make_allocations(deal_id: int,
+                      print_only: bool,
+                      from_private_key: PrivateKeyType,
+                      exclude_dag: bool):
     #
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
@@ -55,22 +53,41 @@ def _make_allocation(deal_id: int,
 
     manifest = commands_utils.fetch_manifest(deal.manifest_location, show_manifest=False)
     pieces = manifest[0]["pieces"]
+    client_contract = ClientContract()
 
     if exclude_dag:
         pieces = [piece for piece in pieces if piece["pieceType"] != "dag"]
 
+    deal_allocations = client_contract.get_client_allocation_ids_per_deal(deal_id)
+    state_allocations = rpc_utils.state_get_allocations(client_contract.actor_id())
+
+    pieces_allocated = commands_utils.match_deal_allocations(pieces, state_allocations, deal_allocations)
+    click.echo(f"\nFound {len(pieces_allocated)} already allocated pieces" + (f": {utils.json_pretty(pieces_allocated)}" if pieces_allocated else ""))
+
+    cids_allocated = [alloc.get("Data", {}).get("/") for allocation_id, alloc in state_allocations.items() if
+                      int(allocation_id) in deal_allocations]
+    pieces = [piece for piece in pieces if piece["pieceCid"] not in cids_allocated]
     batches = _batch_pieces(pieces)
+
+    if not pieces:
+        # TODO can we handle this case better?
+        raise RuntimeError("All pieces allocated but deal not marked as completed")
+
+    click.confirm(f"Continue with allocation of remaining {len(pieces)} pieces in {len(batches)} batches?", default=True, abort=True)
+
     deal_duration = deal.terms.duration_days * EPOCHS_PER_DAY
-    client_contract = ClientContract()
 
     for batch_idx, batch in enumerate(batches):
         current_batch_number = batch_idx + 1
 
-        if current_batch_number < start_batch:
-            click.echo(f"Skipping Batch {current_batch_number}/{len(batches)}...")
-            continue
+        click.echo(f"\nBatch {current_batch_number}/{len(batches)} ({len(batch)} pieces):")
+        for piece_cid, size in batch:
+            data = {
+                "pieceCid": piece_cid,
+                "pieceSize": size
+            }
 
-        click.echo(f"\nBatch {current_batch_number}/{len(batches)} ({len(batch)} pieces)")
+            click.echo(f"  {utils.json_pretty(data)}")
 
         operator_data = _build_operator_data_batch(
             provider_id=deal.provider_id,
@@ -86,7 +103,7 @@ def _make_allocation(deal_id: int,
         params = TransferParams(
             to=(b"\x00\x06",),
             amount=(utils.uint_to_bytes(utils.to_wei(total_size, DATACAP_DECIMALS), size=None), False),
-            operator_data=operator_data,
+            operator_data=operator_data
         )
 
         is_completed = current_batch_number == len(batches)
@@ -108,7 +125,7 @@ def _make_allocation(deal_id: int,
 
 def _build_operator_data_batch(provider_id: int, batch: list[tuple[str, int]], term_min: int, term_max: int, expiration: int) -> bytes:
     def format_cid_to_cbor_universal(cid_str: str) -> cbor2.CBORTag:
-        cid_bytes = multibase.decode(cid_str)
+        cid_bytes = bytes(multibase.decode(cid_str))
         cid_with_prefix = b"\x00" + cid_bytes
         return cbor2.CBORTag(42, cid_with_prefix)
 
