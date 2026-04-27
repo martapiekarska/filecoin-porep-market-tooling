@@ -23,10 +23,10 @@ set +a
   python3 "${CLI_PATH}"             >/dev/null &&
   python3 "${CLI_PATH}" info --help >/dev/null &&
 
-  python3 "${CLI_PATH}" client --address "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                           >/dev/null &&
+  python3 "${CLI_PATH}" client --address "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                          >/dev/null &&
   python3 "${CLI_PATH}" admin --private-key "b73163861add8c8280f62958432131b7a5e69a9276a3cfa26fcaa92ff356fadc" info >/dev/null &&
-  python3 "${CLI_PATH}" sp --organization "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                           >/dev/null &&
-  python3 "${CLI_PATH}" admin get-deals --help>/dev/null &&
+  python3 "${CLI_PATH}" sp --organization "0x5CF0365dA2F0a83c70Dfb4b96067c0e3cd2Ea951" info                         >/dev/null &&
+  python3 "${CLI_PATH}" admin get-deals --help                                                                      >/dev/null &&
 
   # admin tests
   python3 "${CLI_PATH}" admin get-deals proposed         >/dev/null &&
@@ -38,7 +38,7 @@ set +a
 
   # client tests
   python3 "${CLI_PATH}" client get-deals rejected                >/dev/null &&
-  python3 "${CLI_PATH}" client get-filecoin-pay-account          >/dev/null &&
+  python3 "${CLI_PATH}" client get-filecoinpay-account           >/dev/null &&
   python3 "${CLI_PATH}" client init-accepted-deals --help        >/dev/null &&
   python3 "${CLI_PATH}" client deposit-for-all-deals --help      >/dev/null &&
   python3 "${CLI_PATH}" client propose-deal-from-manifest --help >/dev/null &&

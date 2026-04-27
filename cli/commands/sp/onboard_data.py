@@ -32,9 +32,9 @@ def onboard_data(deal_id: int, output_dir: str, jobs: int):
     try:
         subprocess.run([aria2c_path, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     except Exception as e:
-        raise RuntimeError("aria2c not found. Please install aria2c to use this command. "
-                           "See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information. "
-                           "Set the ARIA2C_PATH environment variable if aria2c is installed but not in PATH.") from e
+        raise click.ClickException("aria2c not found. Please install aria2c to use this command. "
+                                   "See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information. "
+                                   "Set the ARIA2C_PATH environment variable if aria2c is installed but not in PATH.") from e
 
     deal = PoRepMarket().get_deal_proposal(deal_id)
 

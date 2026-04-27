@@ -102,11 +102,11 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries
 def _get_manifest_hostname(manifest_url: str) -> ParseResult:
     parsed = urlparse(manifest_url)
 
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise click.ClickException("Manifest URL must use http/https")
-
     if not parsed.hostname:
-        raise RuntimeError("Manifest URL must have a hostname")
+        raise click.ClickException("Manifest URL must have a hostname")
+
+    if parsed.scheme not in ("http", "https"):
+        raise click.ClickException("Manifest URL must use http/https")
 
     # noinspection PyTypeChecker
     ip = socket.gethostbyname(parsed.hostname)
