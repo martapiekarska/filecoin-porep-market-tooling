@@ -3,19 +3,19 @@ from math import ceil
 
 import click
 from eth_account.datastructures import SignedMessage
-from eth_account.types import PrivateKeyType
 from web3.auto import w3
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.commands.client._client import client_address, client_private_key
 from cli.services.contracts.contract_service import ContractService, Address
 from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState, PoRepMarketDealRequest
 from cli.services.contracts.usdc_token import USDCToken
 
 
-def get_client_deals(client_address: Address, state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
+def get_client_deals(state: PoRepMarketDealState | None = None) -> list[PoRepMarketDealProposal]:
     all_deals = commands_utils.get_all_deals(state=state)
-    return [deal for deal in all_deals if deal.client_address == client_address]
+    return [deal for deal in all_deals if deal.client_address == client_address()]
 
 
 def calculate_deposit_amount_for_deal(deal: PoRepMarketDealRequest, deposit_for_months: int = 1) -> int:
@@ -36,9 +36,8 @@ def get_permit_deadline() -> int:
 
 
 # EIP-712 signing for FileCoinPay permit msg
-def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key: PrivateKeyType) -> SignedMessage:
+def sign_filecoinpay_permit(amount: int, permit_deadline: int) -> SignedMessage:
     token_name = USDCToken().name()
-    from_address = Address.from_private_key(from_private_key)
 
     # signed_msg.signature is sensitive info, should never be logged
     signed_msg = w3.eth.account.sign_typed_data(
@@ -58,12 +57,12 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int, from_private_key:
             ]
         },
         message_data={
-            "owner": from_address,
+            "owner": client_address(),
             "spender": utils.get_env_required("FILECOIN_PAY", required_type=Address),
             "value": amount,
-            "nonce": USDCToken().nonces(from_address),
+            "nonce": USDCToken().nonces(client_address()),
             "deadline": permit_deadline
-        }, private_key=from_private_key)
+        }, private_key=client_private_key())
 
     if not signed_msg.v or not signed_msg.r or not signed_msg.s or not signed_msg.signature:
         raise RuntimeError("Invalid EIP-712 signature generated for FileCoinPay permit")

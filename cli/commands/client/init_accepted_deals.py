@@ -2,11 +2,10 @@ import contextlib
 import sys
 
 import click
-from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands.client import _utils as client_utils
-from cli.commands.client._client import client_private_key
+from cli.commands.client._client import client_address, client_private_key
 from cli.services.contracts.contract_service import ContractService, Address
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.filecoinpay_validator import FileCoinPayValidator
@@ -29,46 +28,44 @@ def init_accepted_deals(deal_id: int | None = None):
     3. initialize FileCoinPay rail.
     """
 
-    _init_accepted_deals(client_private_key(), deal_id)
+    _init_accepted_deals(deal_id)
 
 
 # TODO LATER print deal state at the end?
-def _init_accepted_deals(from_private_key: PrivateKeyType, deal_id: int | None = None):
-    from_address = Address.from_private_key(from_private_key)
-    ContractService.wait_for_pending_transactions(from_address)
+def _init_accepted_deals(deal_id: int | None = None):
+    ContractService.wait_for_pending_transactions(client_address())
 
     if deal_id is not None:
         accepted_deals = [PoRepMarket().get_deal_proposal(deal_id)]
     else:
-        accepted_deals = client_utils.get_client_deals(from_address, PoRepMarketDealState.ACCEPTED)
-        click.echo(f"Found {len(accepted_deals)} accepted deals for client_address {from_address}\n")
+        accepted_deals = client_utils.get_client_deals(PoRepMarketDealState.ACCEPTED)
+        click.echo(f"Found {len(accepted_deals)} accepted deals for client_address {client_address()}\n")
 
     for deal in accepted_deals:
         click.echo(f"\nDeal id {deal.deal_id}: {utils.json_pretty(deal)}\n")
 
         with contextlib.suppress(click.Abort, click.ClickException):
-            _deploy_and_set_validator(deal.deal_id, from_private_key)
-            ContractService.wait_for_pending_transactions(from_address)
+            _deploy_and_set_validator(deal.deal_id)
+            ContractService.wait_for_pending_transactions(client_address())
 
-            _deposit_and_approve_operator(deal.deal_id, from_private_key)
-            ContractService.wait_for_pending_transactions(from_address)
+            _deposit_and_approve_operator(deal.deal_id)
+            ContractService.wait_for_pending_transactions(client_address())
 
-            _initialize_rail(deal.deal_id, from_private_key)
-            ContractService.wait_for_pending_transactions(from_address)
+            _initialize_rail(deal.deal_id)
+            ContractService.wait_for_pending_transactions(client_address())
 
     click.echo("\n\nAll done!")
     click.echo(f"\nRun {sys.argv[0]} client deposit-for-all-deals to make sure you have enough FileCoinPay funds deposited for all your accepted deals")
 
 
-def _deploy_and_set_validator(deal_id: int, from_private_key: PrivateKeyType) -> str:
-    from_address = Address.from_private_key(from_private_key)
+def _deploy_and_set_validator(deal_id: int) -> str:
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if not deal:
         raise click.ClickException(f"Deal id {deal_id} not found")
 
-    if deal.client_address != from_address:
-        raise click.ClickException(f"Deal id {deal_id} client address {deal.client_address} does not match from address {from_address}")
+    if deal.client_address != client_address():
+        raise click.ClickException(f"Deal id {deal_id} client address {deal.client_address} does not match from address {client_address()}")
 
     if deal.state != PoRepMarketDealState.ACCEPTED:
         raise click.ClickException(f"Deal id {deal.deal_id} is not in ACCEPTED state")
@@ -78,13 +75,13 @@ def _deploy_and_set_validator(deal_id: int, from_private_key: PrivateKeyType) ->
 
     click.confirm(f"Deploy and set validator for deal id {deal.deal_id}?", default=True, abort=True)
 
-    tx_hash = ValidatorFactory().create(deal.deal_id, from_private_key)
+    tx_hash = ValidatorFactory().create(deal.deal_id, client_private_key())
 
     click.echo(f"Validator deployed for deal id {deal.deal_id}: {tx_hash}")
     return tx_hash
 
 
-def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType) -> str:
+def _deposit_and_approve_operator(deal_id: int) -> str:
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if not deal:
@@ -93,9 +90,8 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
     if not __get_validator_address_for_deal(deal):
         raise click.ClickException(f"Validator not found for deal id {deal.deal_id}, cannot deposit and approve operator")
 
-    from_address = Address.from_private_key(from_private_key)
     operator_approval = FileCoinPay().get_operator_approval(utils.get_env_required("USDC_TOKEN", required_type=Address),
-                                                            from_address,
+                                                            client_address(),
                                                             deal.validator_address)
 
     if operator_approval.is_approved:
@@ -104,11 +100,11 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
     token_decimals = USDCToken().decimals()
     token_name = USDCToken().name()
 
-    filecoinpay_account = FileCoinPay().get_account(utils.get_env_required("USDC_TOKEN", required_type=Address), from_address)
+    filecoinpay_account = FileCoinPay().get_account(utils.get_env_required("USDC_TOKEN", required_type=Address), client_address())
     filecoinpay_available_funds = filecoinpay_account.funds - filecoinpay_account.lockup_current
     filecoinpay_available_funds_str = utils.str_from_wei(filecoinpay_available_funds, token_decimals)
 
-    token_balance = USDCToken().balance_of(from_address)
+    token_balance = USDCToken().balance_of(client_address())
     token_balance_str = utils.str_from_wei(token_balance, token_decimals)
 
     permit_deadline = client_utils.get_permit_deadline()
@@ -117,7 +113,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
     deposit_amount_str = utils.str_from_wei(deposit_amount, token_decimals)
 
     if token_balance < deposit_amount:
-        raise click.ClickException(f"Address {from_address} {token_name} balance {token_balance_str} is "
+        raise click.ClickException(f"Address {client_address()} {token_name} balance {token_balance_str} is "
                                    f"less than required deposit {deposit_amount_str} {token_name} for deal id {deal.deal_id}")
 
     # These parameters control operator approval limits in the FileCoinPay contract, not EIP-2612 permits
@@ -131,7 +127,7 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
     # This code now deposit full deposit_amount for the deal only logging the filecoinpay_available_funds
     # This is intentional
     click.confirm(
-        f"\nDeposit {deposit_amount_str} {token_name} for deal id {deal.deal_id} from address {from_address} and approve operator\n"
+        f"\nDeposit {deposit_amount_str} {token_name} for deal id {deal.deal_id} from address {client_address()} and approve operator\n"
         f"  Current token balance: {token_balance_str} {token_name}\n"
         f"  Current FileCoinPay account available funds: {filecoinpay_available_funds_str} {token_name}\n"
         f"  Operator address: {deal.validator_address}\n"
@@ -140,9 +136,9 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
         f"  Max lockup period: {'MAX_UINT256' if max_lockup_period == utils.MAX_UINT256 else max_lockup_period}", abort=True)
 
     click.echo()
-    signed_msg = client_utils.sign_filecoinpay_permit(deposit_amount, permit_deadline, from_private_key)
+    signed_msg = client_utils.sign_filecoinpay_permit(deposit_amount, permit_deadline)
     tx_hash = FileCoinPay().deposit_with_permit_and_approve_operator(utils.get_env_required("USDC_TOKEN", required_type=Address),
-                                                                     from_address,
+                                                                     client_address(),
                                                                      deposit_amount,
                                                                      permit_deadline,
                                                                      signed_msg.v, utils.uint_to_bytes(signed_msg.r), utils.uint_to_bytes(signed_msg.s),
@@ -150,13 +146,13 @@ def _deposit_and_approve_operator(deal_id: int, from_private_key: PrivateKeyType
                                                                      rate_allowance,
                                                                      lockup_allowance,
                                                                      max_lockup_period,
-                                                                     from_private_key)
+                                                                     client_private_key())
 
     click.echo(f"Deposited {deposit_amount_str} {token_name} and operator approved for deal id {deal.deal_id}: {tx_hash}")
     return tx_hash
 
 
-def _initialize_rail(deal_id: int, from_private_key: PrivateKeyType) -> str:
+def _initialize_rail(deal_id: int) -> str:
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if not deal:
@@ -165,9 +161,8 @@ def _initialize_rail(deal_id: int, from_private_key: PrivateKeyType) -> str:
     if not __get_validator_address_for_deal(deal):
         raise click.ClickException(f"Validator not found for deal id {deal.deal_id}, cannot initialize rail")
 
-    from_address = Address.from_private_key(from_private_key)
     operator_approval = FileCoinPay().get_operator_approval(utils.get_env_required("USDC_TOKEN", required_type=Address),
-                                                            from_address,
+                                                            client_address(),
                                                             deal.validator_address)
 
     if not operator_approval.is_approved:
@@ -178,7 +173,7 @@ def _initialize_rail(deal_id: int, from_private_key: PrivateKeyType) -> str:
 
     click.confirm(f"Initialize FileCoinPay rail for deal id {deal.deal_id}?", default=True, abort=True)
 
-    tx_hash = FileCoinPayValidator(deal.validator_address).create_rail(utils.get_env_required("USDC_TOKEN", required_type=Address), from_private_key)
+    tx_hash = FileCoinPayValidator(deal.validator_address).create_rail(utils.get_env_required("USDC_TOKEN", required_type=Address), client_private_key())
 
     click.echo(f"FileCoinPay rail initialized for deal id {deal.deal_id}: {tx_hash}")
     return tx_hash

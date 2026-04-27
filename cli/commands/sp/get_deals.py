@@ -2,7 +2,7 @@ import click
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.sp._sp import sp_address
+from cli.commands.sp._sp import sp_organization_address
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarket
 from cli.services.contracts.sp_registry import SPRegistry
 
@@ -29,7 +29,7 @@ def get_deals(state: str | None = None, provider_id: str | None = None, deal_id:
             provider_info = SPRegistry().get_provider_info(_provider_id)
             organization_address = provider_info.organization_address
         else:
-            organization_address = sp_address()
+            organization_address = sp_organization_address()
 
         result = commands_utils.get_all_deals(_state, organization_address)
 

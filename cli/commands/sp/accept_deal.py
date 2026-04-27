@@ -1,7 +1,7 @@
 import click
 
 from cli.commands.sp import _utils as sp_utils
-from cli.commands.sp._sp import sp_private_key, sp_address
+from cli.commands.sp._sp import sp_address
 from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.porep_market import PoRepMarket
 
@@ -18,4 +18,4 @@ def accept_deal(deal_id: int):
 
     ContractService.wait_for_pending_transactions(sp_address())
 
-    sp_utils.accept_deal(PoRepMarket().get_deal_proposal(deal_id), sp_private_key())
+    sp_utils.accept_deal(PoRepMarket().get_deal_proposal(deal_id))

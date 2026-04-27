@@ -1,11 +1,10 @@
 import cbor2
 import click
 import multibase
-from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.client._client import client_private_key, client_address
+from cli.commands.client._client import client_address, client_private_key
 from cli.services import rpc_utils
 from cli.services.contracts.client_contract import ClientContract, TransferParams
 from cli.services.contracts.contract_service import ContractService
@@ -38,12 +37,11 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
 
     ContractService.wait_for_pending_transactions(client_address())
 
-    _make_allocations(deal_id, print_only, client_private_key(), exclude_dag)
+    _make_allocations(deal_id, print_only, exclude_dag)
 
 
 def _make_allocations(deal_id: int,
                       print_only: bool,
-                      from_private_key: PrivateKeyType,
                       exclude_dag: bool):
     #
     deal = PoRepMarket().get_deal_proposal(deal_id)
@@ -111,7 +109,7 @@ def _make_allocations(deal_id: int,
         if print_only:
             click.echo(f"to={params.to[0].hex()}  amount={params.amount[0].hex()}  operator_data={params.operator_data.hex()}   is_completed={is_completed}")
         else:
-            tx_hash = client_contract.transfer(params, deal_id, is_completed, from_private_key)
+            tx_hash = client_contract.transfer(params, deal_id, is_completed, client_private_key())
             click.echo(f"params: {params}, tx={tx_hash}, deal_completed={is_completed}")
 
             if tx_hash == ContractService.ZERO_TX_HASH:

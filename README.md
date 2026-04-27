@@ -34,15 +34,9 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
     2. `[ADMIN|CLIENT|SP]_PRIVATE_KEY` variable in the local `.env` file,
     3. if non of those are set, the app will prompt the user to input the private key for required operations in a secure manner.
 - The app expects the private key to be 32-byte raw private key (hex, 0x-prefixed).
-- Read-only commands do not require private key set, though some of them require user's address.
-- To avoid confusion, for all blockchain transactions, the app expects the `--address` option to match provided private key.
+- Read-only commands do not require private key set, though some of them require user's address (`client --address` and `sp --organization`).
 - Rule of thumb: the private key you set is the one that signs and sends transactions, \
   so always use the one with correct permissions / approvals / rights for the transaction you want to send.
-- There are 2 ways of providing the user's address for blockchain transactions and the priority is as follows:
-    1. Derive from the provided private key (if any),
-    2. `--address` option. \
-       If both are provided, the app expects them to match to avoid confusion.
-       For some read-only commands, neither private key nor address is required.
 - Make sure the address for blockchain transactions you use has enough FIL for gas fees and is **initialized on the Filecoin network**.
 - The app prints output of read-only commands in json format to be easily parsable by other tools.
 - PoRep Market smart contracts supports only 32 GiB sectors.

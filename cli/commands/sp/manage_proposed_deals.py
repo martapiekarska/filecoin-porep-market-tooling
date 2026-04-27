@@ -1,21 +1,18 @@
 import contextlib
 
 import click
-from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.sp import _utils as sp_utils
-from cli.commands.sp._sp import sp_private_key
+from cli.commands.sp._sp import sp_private_key, sp_organization_address
 from cli.services.contracts.contract_service import ContractService, Address
 
 
 # TODO LATER print deals states at the end?
-def _manage_proposed_deals(from_private_key: PrivateKeyType, answer: str | None = None):
-    from_address = Address.from_private_key(from_private_key)
-    ContractService.wait_for_pending_transactions(from_address)
-
-    deals = commands_utils.get_all_deals(sp_utils.PoRepMarketDealState.PROPOSED, from_address)
+def _manage_proposed_deals(answer: str | None = None):
+    ContractService.wait_for_pending_transactions(Address.from_private_key(sp_private_key()))
+    deals = commands_utils.get_all_deals(sp_utils.PoRepMarketDealState.PROPOSED, sp_organization_address())
 
     click.echo(f"Found {len(deals)} proposed deals.")
 
@@ -26,10 +23,12 @@ def _manage_proposed_deals(from_private_key: PrivateKeyType, answer: str | None 
 
         with contextlib.suppress(click.Abort, click.ClickException):
             if _answer in ["accept", "a"]:
-                sp_utils.accept_deal(deal, from_private_key)
+                click.echo()
+                sp_utils.accept_deal(deal)
 
             elif _answer in ["reject", "r"]:
-                sp_utils.reject_deal(deal, from_private_key)
+                click.echo()
+                sp_utils.reject_deal(deal)
 
             elif _answer in ["skip", "s"]:
                 continue
@@ -39,7 +38,6 @@ def _manage_proposed_deals(from_private_key: PrivateKeyType, answer: str | None 
 
 @click.command()
 @click.argument("action", required=False, type=click.Choice(["accept", "reject"], case_sensitive=False))
-# TODO LATER can --private-key be different from --address here?
 def manage_proposed_deals(action: str | None):
     """
     Interactively manage proposed deals. Either accept or reject each proposed deal manually or based on provided ACTION argument.
@@ -47,4 +45,4 @@ def manage_proposed_deals(action: str | None):
     ACTION - Action to perform on proposed deals.
     """
 
-    _manage_proposed_deals(sp_private_key(), answer=action)
+    _manage_proposed_deals(answer=action)

@@ -1,17 +1,15 @@
 import click
-from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands.admin import _utils as admin_utils
-from cli.commands.admin._admin import admin_private_key
-from cli.services.contracts.contract_service import ContractService, Address
+from cli.commands.admin._admin import admin_private_key, admin_address
+from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.sp_registry import SPRegistry, SPRegistryProvider, SPRegistryProviderInfo
 
 
 def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderInfo,
                              registered_info: SPRegistryProvider,
-                             different_parameters: dict,
-                             from_private_key: PrivateKeyType):
+                             different_parameters: dict):
     #
     if provider.organization_address != registered_info.organization_address:
         raise RuntimeError(f"Organization address cannot be updated for provider {utils.int_id_to_f0_str(provider.provider_id)}")
@@ -27,7 +25,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
             tx_hash = SPRegistry().set_deal_duration_limits(provider.provider_id,
                                                             provider.min_deal_duration_days,
                                                             provider.max_deal_duration_days,
-                                                            from_private_key)
+                                                            admin_private_key())
 
             click.echo(f"Updated deal duration limits for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
@@ -42,7 +40,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
             #
             tx_hash = SPRegistry().set_price(provider.provider_id,
                                              provider.price_per_sector_per_month,
-                                             from_private_key)
+                                             admin_private_key())
 
             click.echo(f"Updated price per sector per month for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
@@ -57,7 +55,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
             #
             tx_hash = SPRegistry().set_capabilities(provider.provider_id,
                                                     provider.capabilities,
-                                                    from_private_key)
+                                                    admin_private_key())
 
             click.echo(f"Updated capabilities for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
@@ -72,7 +70,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
             #
             tx_hash = SPRegistry().set_payee(provider.provider_id,
                                              provider.payee_address,
-                                             from_private_key)
+                                             admin_private_key())
 
             click.echo(f"Updated payee address for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
@@ -87,7 +85,7 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
             #
             tx_hash = SPRegistry().update_available_space(provider.provider_id,
                                                           provider.available_bytes,
-                                                          from_private_key)
+                                                          admin_private_key())
 
             click.echo(f"Updated available bytes for provider {utils.int_id_to_f0_str(provider.provider_id)}: {tx_hash}")
 
@@ -96,8 +94,8 @@ def __update_provider_params(provider: SPRegistryProvider | SPRegistryProviderIn
 
 
 # TODO LATER print register provider at the end?
-def _register_sps(providers: list[SPRegistryProvider], from_private_key: PrivateKeyType):
-    ContractService.wait_for_pending_transactions(Address.from_private_key(from_private_key))
+def _register_sps(providers: list[SPRegistryProvider]):
+    ContractService.wait_for_pending_transactions(admin_address())
 
     for provider in providers:
         is_registered = SPRegistry().is_provider_registered(provider.provider_id)
@@ -130,7 +128,7 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: Private
                 click.echo("Skipped this provider")
                 continue
 
-            __update_provider_params(provider, registered_info, different_parameters, from_private_key)
+            __update_provider_params(provider, registered_info, different_parameters)
 
         else:
             # register provider with given parameters
@@ -145,7 +143,7 @@ def _register_sps(providers: list[SPRegistryProvider], from_private_key: Private
                 click.echo("Skipped this provider")
                 continue
 
-            tx_hash = SPRegistry().register_provider_for(provider, from_private_key)
+            tx_hash = SPRegistry().register_provider_for(provider, admin_private_key())
             click.echo(f"Provider {utils.int_id_to_f0_str(provider.provider_id)} registered: {tx_hash}")
 
 
@@ -174,16 +172,14 @@ def register_db_sps(db_url: str,
     DB_ID - SPRegistry database organization id to register SPs from.
     """
 
-    _register_sps(
-        admin_utils.get_db_sps(db_url,
-                               kyc_status="approved",
-                               organization_id=db_id,
-                               indexing_pct=indexing_pct,
-                               miner_id=utils.f0_str_id_to_int(miner_id) if miner_id else None,
-                               organization_address=organization_address),
-        admin_private_key())
+    _register_sps(admin_utils.get_db_sps(db_url,
+                                         kyc_status="approved",
+                                         organization_id=db_id,
+                                         indexing_pct=indexing_pct,
+                                         miner_id=utils.f0_str_id_to_int(miner_id) if miner_id else None,
+                                         organization_address=organization_address))
 
 
 @click.command(hidden=True)
 def register_devnet_sps():
-    _register_sps(admin_utils.get_devnet_sps(), admin_private_key())
+    _register_sps(admin_utils.get_devnet_sps())

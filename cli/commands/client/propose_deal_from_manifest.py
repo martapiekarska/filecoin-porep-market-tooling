@@ -1,12 +1,11 @@
 import click
 import humanfriendly
-from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _utils as client_utils
-from cli.commands.client._client import client_private_key
-from cli.services.contracts.contract_service import ContractService, Address
+from cli.commands.client._client import client_private_key, client_address
+from cli.services.contracts.contract_service import ContractService
 from cli.services.contracts.porep_market import PoRepMarketDealRequest, PoRepMarketDealTerms, PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.sp_registry import SPRegistrySLIThresholds
 from cli.services.contracts.usdc_token import USDCToken
@@ -21,8 +20,7 @@ def _propose_deal_from_manifest(manifest_url: str,
                                 price_per_sector_per_month: int,
                                 duration_months: int,
                                 latency_ms: int,
-                                indexing_pct: int,
-                                from_private_key: PrivateKeyType):
+                                indexing_pct: int):
     #
     manifest = commands_utils.fetch_manifest(manifest_url)
     pieces = manifest[0]["pieces"]
@@ -51,10 +49,8 @@ def _propose_deal_from_manifest(manifest_url: str,
         ),
         manifest_location=manifest_url)
 
-    from_address = Address.from_private_key(from_private_key)
-    ContractService.wait_for_pending_transactions(from_address)
-
-    existing_deals = client_utils.get_client_deals(from_address)
+    ContractService.wait_for_pending_transactions(client_address())
+    existing_deals = client_utils.get_client_deals()
 
     # warn if any of existing client deals looks similar to the new deal proposal
     for existing_deal in existing_deals:
@@ -86,7 +82,7 @@ def _propose_deal_from_manifest(manifest_url: str,
                   f"This is a total of {total_max_cost_str} {token_name} for {duration_months} months. "
                   f"Continue?", abort=True)
 
-    tx_hash = PoRepMarket().propose_deal(deal, from_private_key)
+    tx_hash = PoRepMarket().propose_deal(deal, client_private_key())
     click.echo(f"Created deal proposal from manifest {manifest_url}: {tx_hash}")
 
 
@@ -129,8 +125,7 @@ def propose_deal_from_manifest(manifest_url: str,
                                 price_per_sector_per_month,
                                 duration_months,
                                 latency_ms,
-                                indexing_pct,
-                                client_private_key())
+                                indexing_pct)
 
 
 # TODO LATER remove me
@@ -151,5 +146,4 @@ def propose_deal_from_manifest_mocked(manifest_url: str):
                                 price_per_sector_per_month,
                                 duration_months,
                                 latency_ms,
-                                indexing_pct,
-                                client_private_key())
+                                indexing_pct)

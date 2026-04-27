@@ -46,6 +46,7 @@ def get_all_deals(state: PoRepMarketDealState | str | None = None,
 def print_info():
     try:
         click.echo(f"Chain ID: {ContractService.get_chain_id()}")
+    # pylint: disable=broad-exception-caught
     except Exception as e:
         click.echo(f"Error getting chain ID: {e}\n")
 

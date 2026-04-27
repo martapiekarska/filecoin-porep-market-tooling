@@ -6,6 +6,6 @@ exclude =
     venv,
     __init__.py
 
-max-complexity = 33
+max-complexity = 34
 max-line-length = 160
 extend-ignore = E203

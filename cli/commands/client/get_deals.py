@@ -2,7 +2,6 @@ import click
 
 from cli import utils
 from cli.commands.client import _utils as client_utils
-from cli.commands.client._client import client_address
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarket
 
 
@@ -19,6 +18,6 @@ def get_deals(state: str | None, deal_id: int | None = None):
     if deal_id is not None:
         result = [PoRepMarket().get_deal_proposal(deal_id)]
     else:
-        result = client_utils.get_client_deals(client_address(), PoRepMarketDealState.from_string(state))
+        result = client_utils.get_client_deals(PoRepMarketDealState.from_string(state))
 
     click.echo(utils.json_pretty(result))

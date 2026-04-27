@@ -12,7 +12,7 @@ CLIENT_PRIVATE_KEY: str | None = None
 
 @click.group()
 @click.option("--address", help="Client address to use.  [default: derived from the provided private key]")
-@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", show_envvar=True, hidden=True)
+@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", hidden=True)
 @click.option("--confirm-info", is_flag=True, default=False, show_default=True,
               help="Confirm current account info before executing command.  [default: false]")
 def client(address: str | None = None, private_key: str | None = None, confirm_info: bool = False):
@@ -60,8 +60,8 @@ def client_private_key() -> PrivateKeyType:
 
 
 def _info():
-    click.echo(f"Client address: {CLIENT_ADDRESS if CLIENT_ADDRESS else ''}")
-    click.echo(f"Client private key: {utils.private_str_to_log_str(CLIENT_PRIVATE_KEY)}")
+    click.echo(f"Client wallet address: {CLIENT_ADDRESS if CLIENT_ADDRESS else ''}")
+    click.echo(f"Client wallet private key: {utils.private_str_to_log_str(CLIENT_PRIVATE_KEY)}")
     click.echo()
     commands_utils.print_info()
 
