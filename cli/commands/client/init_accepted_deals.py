@@ -27,11 +27,6 @@ def init_accepted_deals(deal_id: int | None = None):
     3. initialize FileCoinPay rail.
     """
 
-    _init_accepted_deals(deal_id)
-
-
-# TODO LATER print deal state at the end?
-def _init_accepted_deals(deal_id: int | None = None):
     ContractService.wait_for_pending_transactions(client_address())
 
     if deal_id is not None:
@@ -67,9 +62,6 @@ def _init_accepted_deals(deal_id: int | None = None):
 def _deploy_and_set_validator(deal_id: int):
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
-    if not deal:
-        raise click.ClickException(f"Deal id {deal_id} not found")
-
     if deal.client_address != client_address():
         raise click.ClickException(f"Deal id {deal_id} client address {deal.client_address} does not match from address {client_address()}")
 
@@ -88,9 +80,6 @@ def _deploy_and_set_validator(deal_id: int):
 
 def _deposit_and_approve_operator(deal_id: int):
     deal = PoRepMarket().get_deal_proposal(deal_id)
-
-    if not deal:
-        raise click.ClickException(f"Deal id {deal_id} not found")
 
     if not __get_validator_address_for_deal(deal):
         raise click.ClickException(f"Validator not found for deal id {deal.deal_id}, cannot deposit and approve operator")
@@ -159,9 +148,6 @@ def _deposit_and_approve_operator(deal_id: int):
 
 def _initialize_rail(deal_id: int):
     deal = PoRepMarket().get_deal_proposal(deal_id)
-
-    if not deal:
-        raise click.ClickException(f"Deal id {deal_id} not found")
 
     if not __get_validator_address_for_deal(deal):
         raise click.ClickException(f"Validator not found for deal id {deal.deal_id}, cannot initialize rail")

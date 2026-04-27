@@ -29,8 +29,10 @@ def onboard_data(deal_id: int, output_dir: str, jobs: int):
 
     aria2c_path = utils.get_env_required("ARIA2C_PATH", default="aria2c")
 
+    # noinspection PyBroadException
     try:
         subprocess.run([aria2c_path, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    # pylint: disable=broad-exception-caught
     except Exception as e:
         raise click.ClickException("aria2c not found. Please install aria2c to use this command. "
                                    "See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information. "

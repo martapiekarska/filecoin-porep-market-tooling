@@ -5,6 +5,7 @@
 # This file is supposed to be python 2 compatible
 
 # pylint: disable=consider-using-f-string
+# pylint: disable=broad-exception-caught
 
 import __future__
 import os

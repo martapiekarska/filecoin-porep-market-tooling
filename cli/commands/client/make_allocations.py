@@ -36,14 +36,6 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
     """
 
     ContractService.wait_for_pending_transactions(client_address())
-
-    _make_allocations(deal_id, print_only, exclude_dag)
-
-
-def _make_allocations(deal_id: int,
-                      print_only: bool,
-                      exclude_dag: bool):
-    #
     deal = PoRepMarket().get_deal_proposal(deal_id)
 
     if deal.state != PoRepMarketDealState.ACCEPTED:

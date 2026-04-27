@@ -44,6 +44,7 @@ def get_all_deals(state: PoRepMarketDealState | str | None = None,
 
 
 def print_info():
+    # noinspection PyBroadException
     try:
         click.echo(f"Chain ID: {ContractService.get_chain_id()}")
     # pylint: disable=broad-exception-caught

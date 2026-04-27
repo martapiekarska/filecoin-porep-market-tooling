@@ -1,3 +1,5 @@
+# pylint: disable=broad-exception-caught
+
 import json
 import logging
 import time
@@ -16,7 +18,6 @@ from cli import utils
 from cli._cli import is_dry_run
 
 
-# TODO LATER use web3.types ?
 class Address(str):
     ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
@@ -25,6 +26,7 @@ class Address(str):
         return super().__new__(cls, str(Web3.to_checksum_address(addr)))
 
     def __eq__(self, other):
+        # noinspection PyBroadException
         try:
             other = Address(other)
         except Exception:
@@ -158,6 +160,7 @@ class ContractService:
         if not abi_error["inputs"]:
             return f"{abi_error['name']}"
 
+        # noinspection PyBroadException
         try:
             return f"{abi_error['name']}({format_error_args(abi_error, arg_data)})"
         except Exception:
