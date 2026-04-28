@@ -8,7 +8,8 @@ from web3.auto import w3
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_private_key
-from cli.services.contracts.contract_service import ContractService, Address
+from cli.services.contracts.contract_service import Address
+from cli.services.web3_service import Web3Service
 from cli.services.contracts.porep_market import PoRepMarketDealProposal, PoRepMarketDealState, PoRepMarketDealRequest
 from cli.services.contracts.usdc_token import USDCToken
 
@@ -44,7 +45,7 @@ def sign_filecoinpay_permit(amount: int, permit_deadline: int) -> SignedMessage:
         domain_data={
             "name": token_name,
             "version": "1",
-            "chainId": ContractService.get_chain_id(),
+            "chainId": Web3Service().get_chain_id(),
             "verifyingContract": utils.get_env_required("USDC_TOKEN", required_type=Address)
         },
         message_types={

@@ -1,6 +1,7 @@
 import click
 
 from cli import utils
+from cli.services import rpc_utils
 from cli.commands import utils as commands_utils
 from cli.services import rpc_utils
 from cli.services.contracts.client_contract import ClientContract

@@ -1,6 +1,7 @@
 import ipaddress
 import socket
 from typing import Dict
+from cli.services.web3_service import Web3Service
 from urllib.parse import ParseResult
 from urllib.parse import urlparse
 
@@ -10,7 +11,7 @@ from eth_account.types import PrivateKeyType
 
 from cli import utils
 from cli._cli import is_dry_run
-from cli.services.contracts.contract_service import Address, ContractService
+from cli.services.contracts.contract_service import Address
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealProposal, PoRepMarket
 
 # TODO LATER take sector size from smart contracts
@@ -46,8 +47,8 @@ def get_all_deals(state: PoRepMarketDealState | str | None = None,
 def print_info():
     # noinspection PyBroadException
     try:
-        click.echo(f"Chain ID: {ContractService.get_chain_id()}")
-    # pylint: disable=broad-exception-caught
+        # pylint: disable=broad-exception-caught
+        click.echo(f"Chain ID: {Web3Service().get_chain_id()}")
     except Exception as e:
         click.echo(f"Error getting chain ID: {e}\n")
 

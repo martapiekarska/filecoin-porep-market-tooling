@@ -2,17 +2,17 @@
 
 import json
 import logging
-import time
 
 import click
 import eth_abi
+from cli.services import rpc_utils
+from cli.services.web3_service import Web3Service
 from eth_account.datastructures import SignedTransaction
 from eth_account.types import PrivateKeyType
 from eth_typing import ABIElement
 from hexbytes import HexBytes
 from web3 import Web3
 from web3.exceptions import ContractCustomError, Web3RPCError
-from web3.types import RPCEndpoint
 
 from cli import utils
 from cli._cli import is_dry_run
@@ -48,25 +48,10 @@ class Address(str):
         return super().__hash__()
 
     def to_filecoin_address(self) -> str:
-        method = "Filecoin.EthAddressToFilecoinAddress"
-        response = ContractService.get_w3().provider.make_request(RPCEndpoint(method), [self])
-
-        if "error" in response:
-            raise RuntimeError(response["error"])
-
-        return response["result"]
+        return rpc_utils.eth_address_to_filecoin_address(self)
 
     def to_actor_id(self) -> int:
-        method = "Filecoin.StateLookupID"
-        response = ContractService.get_w3().provider.make_request(RPCEndpoint(method), [self.to_filecoin_address(), None])
-
-        if "error" in response:
-            raise RuntimeError(response["error"])
-
-        if not response["result"]:
-            raise RuntimeError(f"Failed to get actor ID for address {self}: empty result")
-
-        return utils.f0_str_id_to_int(response["result"])
+        return rpc_utils.state_lookup_id(self.to_filecoin_address())
 
     @staticmethod
     def is_filecoin_address(addr: str) -> bool:
@@ -77,38 +62,30 @@ class Address(str):
         if not Address.is_filecoin_address(addr):
             raise ValueError(f"Invalid Filecoin address format: {addr}")
 
-        response = ContractService.get_w3().provider.make_request(
-            RPCEndpoint("Filecoin.FilecoinAddressToEthAddress"),
-            [addr]
-        )
-
-        if "error" in response:
-            raise RuntimeError(response["error"])
-
-        if not response["result"] or not Web3.is_address(response["result"]):
-            raise ValueError(f"Invalid response for FilecoinAddressToEthAddress: {response['result']}")
-
-        return Address(response["result"])
+        return Address(rpc_utils.from_filecoin_address_to_eth_address(addr))
 
     @staticmethod
     def from_private_key(private_key: PrivateKeyType) -> "Address":
         try:
-            return Address(ContractService.get_w3().eth.account.from_key(private_key).address)
+            return Address(Web3Service().get_address_from_private_key(private_key))
         except Exception as e:
             raise ValueError(f"Invalid private key: {str(e)}") from e
 
 
-class ContractService:
+class ContractService(Web3Service):
     ZERO_TX_HASH = "0x" + "00" * 32
 
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def __init__(self, contract_address: Address, contract_abi_path: str):
+        super().__init__()
         self.logger = logging.getLogger(self._get_class_name())
 
         with open(contract_abi_path, "r", encoding="utf-8") as abi_file:
             contract_abi = json.load(abi_file)
 
-            self.w3 = ContractService.get_w3()
-            self.contract = self.w3.eth.contract(address=Address(str(contract_address)), abi=contract_abi)
+            self.contract = self.get_contract(Address(str(contract_address)), contract_abi)
 
     def _get_class_name(self):
         return self.__class__.__name__
@@ -124,7 +101,7 @@ class ContractService:
             for item in [i for i in self.contract.abi if i.get("type") == "error"]:
                 sig = item["name"] + "(" + ",".join(i["type"] for i in item["inputs"]) + ")"
 
-                if self.w3.keccak(text=sig)[:4] == selector:
+                if self.keccak(text=sig)[:4] == selector:
                     return item
 
             return None
@@ -168,13 +145,13 @@ class ContractService:
 
     def __send_tx(self, signed_tx: SignedTransaction, dry_run: bool) -> HexBytes:
         assert not dry_run
-        return self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        return self.send_raw_transaction(signed_tx)
 
     def _sign_and_send_tx(self, transaction, tx_params: dict, from_private_key: PrivateKeyType, dry_run: bool = False) -> str:
         # transaction.args is sensitive info, should never be logged
         # tx_params.data is sensitive info, should never be logged
 
-        signed_tx = self.w3.eth.account.sign_transaction(tx_params, from_private_key)
+        signed_tx = self.sign_transaction(tx_params, from_private_key)
 
         if dry_run:
             return ContractService.ZERO_TX_HASH
@@ -185,14 +162,14 @@ class ContractService:
         self.logger.warning(f"Transaction sent: {tx_hash.to_0x_hex()}: {ContractService.tx_to_log_string(transaction, tx_params)}")
 
         click.echo(f"Waiting for transaction {tx_hash.to_0x_hex()}...")
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60 * 15, poll_latency=5)  # 15 minutes timeout, 5 seconds polling interval
+        receipt = self.wait_for_transaction_receipt(tx_hash, timeout=60 * 15, poll_latency=5)  # 15 minutes timeout, 5 seconds polling interval
 
         if receipt["status"] == 0:
             # tx failed
-            tx = self.w3.eth.get_transaction(tx_hash)
+            tx = self.get_transaction(tx_hash)
 
             # this call should revert with the same error as the transaction
-            reason = self.w3.eth.call({"to": tx["to"], "from": tx["from"], "data": tx["input"]}, receipt["blockNumber"])
+            reason = self.call({"to": tx["to"], "from": tx["from"], "data": tx["input"]}, receipt["blockNumber"])
             raise click.ClickException(f"Transaction reverted (reason unknown, call returned: {reason.hex() if reason else 'empty'})")
 
         # tx succeeded
@@ -203,7 +180,7 @@ class ContractService:
         # transaction.args is sensitive info, should never be logged
 
         from_address = Address.from_private_key(from_private_key)
-        nonce = ContractService.get_address_nonce(from_address, self.w3)
+        nonce = self.get_address_nonce(from_address)
         tx_params = None
 
         try:
@@ -219,7 +196,7 @@ class ContractService:
                                  f"==   to: {tx_params['to']}\n"
                                  f"==   signature: {transaction.signature}\n"
                                  f"==   nonce: {tx_params['nonce']}\n"
-                                 f"==   gas price: {self.w3.eth.gas_price} wei\n"
+                                 f"==   gas price: {self.get_gas_price()} wei\n"
                                  f"==   gas: {tx_params['gas']}\n"
                                  f"==   value: {tx_params['value']} wei\n"
                                  f"== This is the final confirmation", default=_dry_run):
@@ -266,56 +243,7 @@ class ContractService:
         return utils.json_pretty(result)
 
     @staticmethod
-    def get_w3() -> Web3:
-        return Web3(Web3.HTTPProvider(utils.get_env_required("RPC_URL")))
+    def wait_for_pending_transactions(from_address: Address):
+        _ = Web3Service().get_address_nonce(from_address, block_identifier="pending")
 
-    @staticmethod
-    def get_chain_id() -> int:
-        return ContractService.get_w3().eth.chain_id
 
-    @staticmethod
-    def get_block_number() -> int:
-        return ContractService.get_w3().eth.block_number
-
-    @staticmethod
-    def wait_for_pending_transactions(from_address: Address, w3: Web3 | None = None):
-        _ = ContractService.get_address_nonce(from_address, w3, block_identifier="pending")
-
-    @staticmethod
-    def get_address_nonce(from_address: Address,
-                          w3: Web3 | None = None,
-                          block_identifier: str = "pending") -> int:
-        try:
-            w3 = w3 if w3 else ContractService.get_w3()
-            assert w3
-
-            latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
-            if block_identifier == "latest":
-                return latest_nonce
-
-            assert block_identifier == "pending", f"Unsupported block identifier: {block_identifier}"
-            pending_nonce = w3.eth.get_transaction_count(from_address, "pending")
-
-            while pending_nonce > latest_nonce:
-                while pending_nonce > latest_nonce:
-                    # update pending_nonce loop
-                    click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
-                    latest_nonce = w3.eth.get_transaction_count(from_address, "latest")
-
-                    time.sleep(5)
-
-                # update pending_nonce loop
-                pending_nonce = w3.eth.get_transaction_count(from_address, "pending")
-
-            return pending_nonce
-
-        except Web3RPCError as rpc_err:
-            reason = rpc_err.rpc_response["error"]["message"] if (rpc_err.rpc_response and
-                                                                  "error" in rpc_err.rpc_response and
-                                                                  "message" in rpc_err.rpc_response["error"] and
-                                                                  rpc_err.rpc_response["error"]["message"]) else str(rpc_err)
-
-            raise RuntimeError(f"Web3 RPC error while getting nonce for address {from_address}: {reason}") from rpc_err
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to get nonce for address {from_address}: {str(e)}") from e
