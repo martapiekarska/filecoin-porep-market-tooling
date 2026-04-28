@@ -36,7 +36,7 @@ class Address(str):
         return not self.__eq__(other)
 
     def __bool__(self):
-        return super() and self != Address.ZERO_ADDRESS
+        return bool(str(self)) and self != Address.ZERO_ADDRESS
 
     def __neg__(self):
         return not self.__bool__()
@@ -133,8 +133,8 @@ class Web3Service:
     def call(self, tx_params: TxParams, block_identifier: BlockIdentifier = "latest") -> str:
         return self._w3.eth.call(tx_params, block_identifier).to_0x_hex()
 
-    def contract(self, contract_address: Address, contract_abi_path: str) -> Contract:
-        return self._w3.eth.contract(address=contract_address, abi=contract_abi_path)
+    def contract(self, address: Address, abi: list[dict]) -> Contract:
+        return self._w3.eth.contract(address=address, abi=abi)
 
     def get_transaction_count(self, from_address: Address, block_identifier: BlockIdentifier = "pending") -> int:
         return self._w3.eth.get_transaction_count(from_address, block_identifier)
