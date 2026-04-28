@@ -76,7 +76,7 @@ def sp_private_key() -> PrivateKeyType:
 
 def _info():
     click.echo(f"SP organization address: {sp_organization_address() if SP_ORGANIZATION else ''}")
-    click.echo(f"SP organization: {SP_ORGANIZATION if SP_ORGANIZATION else ''}")
+    click.echo(f"SP organization: {SP_ORGANIZATION or ''}")
     click.echo(f"SP wallet address: {sp_address() if SP_PRIVATE_KEY else ''}")
     click.echo(f"SP wallet private key: {utils.private_str_to_log_str(SP_PRIVATE_KEY)}")
     click.echo()

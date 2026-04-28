@@ -49,7 +49,7 @@ class FileCoinPayOperatorApproval:
 
 class FileCoinPay(ContractService):
     def __init__(self, contract_address: Address | None = None):
-        super().__init__(contract_address if contract_address else utils.get_env_required("FILECOIN_PAY", required_type=Address),
+        super().__init__(contract_address or utils.get_env_required("FILECOIN_PAY", required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/FileCoinPay.json")
 
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction,

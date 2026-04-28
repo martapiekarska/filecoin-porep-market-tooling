@@ -60,7 +60,7 @@ def client_private_key() -> PrivateKeyType:
 
 
 def _info():
-    click.echo(f"Client wallet address: {CLIENT_ADDRESS if CLIENT_ADDRESS else ''}")
+    click.echo(f"Client wallet address: {CLIENT_ADDRESS or ''}")
     click.echo(f"Client wallet private key: {utils.private_str_to_log_str(CLIENT_PRIVATE_KEY)}")
     click.echo()
     commands_utils.print_info()

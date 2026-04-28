@@ -20,7 +20,7 @@ class TransferParams:
 
 class ClientContract(ContractService):
     def __init__(self, contract_address: Address | None = None):
-        super().__init__(contract_address if contract_address else utils.get_env_required("CLIENT_CONTRACT", required_type=Address),
+        super().__init__(contract_address or utils.get_env_required("CLIENT_CONTRACT", required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + "/abi/Client.json")
 
     # @notice This function transfers DataCap tokens from the client to the storage provider

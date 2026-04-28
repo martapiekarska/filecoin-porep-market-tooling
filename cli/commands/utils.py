@@ -81,7 +81,7 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries
     if not quiet:
         click.echo(f"Fetching manifest from {manifest_url}")
 
-    parsed_url = _get_manifest_hostname(manifest_url)
+    parsed_url = validate_and_parse_url(manifest_url)
 
     while True:
         try:
@@ -102,7 +102,7 @@ def fetch_manifest(manifest_url: str, show_manifest: bool | None = None, retries
                     retries -= 1
 
 
-def _get_manifest_hostname(manifest_url: str) -> ParseResult:
+def validate_and_parse_url(manifest_url: str) -> ParseResult:
     parsed = urlparse(manifest_url)
 
     if not parsed.hostname:

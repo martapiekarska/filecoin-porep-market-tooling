@@ -7,7 +7,7 @@ from cli.services.web3_service import Address
 class ERC20Contract(ContractService):
     def __init__(self, contract_address: Address, contract_abi_path: str | None = None):
         super().__init__(contract_address,
-                         contract_abi_path if contract_abi_path else os.path.dirname(os.path.realpath(__file__)) + '/abi/ERC20.json')
+                         contract_abi_path or os.path.dirname(os.path.realpath(__file__)) + '/abi/ERC20.json')
 
     def balance_of(self, account: Address) -> int:
         return self.contract.functions.balanceOf(account).call()

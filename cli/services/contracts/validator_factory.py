@@ -9,7 +9,7 @@ from cli.services.web3_service import Address
 
 class ValidatorFactory(ContractService):
     def __init__(self, contract_address: Address | None = None):
-        super().__init__(contract_address if contract_address else utils.get_env_required('VALIDATOR_FACTORY', required_type=Address),
+        super().__init__(contract_address or utils.get_env_required('VALIDATOR_FACTORY', required_type=Address),
                          os.path.dirname(os.path.realpath(__file__)) + '/abi/ValidatorFactory.json')
 
     # @notice Creates a new instance of an upgradeable contract.
