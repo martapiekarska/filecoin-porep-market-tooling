@@ -13,7 +13,7 @@ from cli.commands.admin import _utils as admin_utils
 @click.option("--indexing-pct", type=click.IntRange(0, 100), default=0, show_default=True,
               help="IPNI indexing guarantee in percentage to return; 0 means \"don't support\".")
 @click.option("--miner-id", required=False,
-              help="SPRegistry database miner_id (PoRep Market SP id) to return.")
+              help="SPRegistry database miner_id (PoRep Market SP ID) to return.")
 @click.option("--organization-address", required=False,
               help="SPRegistry database organization_address to return.")
 def get_db_sps(db_url: str,

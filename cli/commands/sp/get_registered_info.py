@@ -11,7 +11,7 @@ def get_registered_info(provider_id: str | None = None):
     """
     Get PoRep Market registered info for the SP.
 
-    PROVIDER_ID - Provider id to query. [default: all providers under current SP organization]
+    PROVIDER_ID - Storage Provider id to query. [default: all providers under current SP organization]
     """
 
     _provider_id = utils.f0_str_id_to_int(provider_id) if provider_id else None
