@@ -11,35 +11,24 @@ from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealStat
 
 
 def _get_aria2c_path() -> str:
-    def _is_under_debugger() -> bool:
-        import sys
-
-        gettrace = getattr(sys, "gettrace", None)
-
-        if gettrace is None:
-            return False
-        else:
-            return gettrace() is not None
-
     aria2c_path = utils.get_env_required("ARIA2C_PATH", default="aria2c")
 
     if aria2c_path != "aria2c":
         aria2c_path = Path(aria2c_path).resolve()
 
-    if not _is_under_debugger():
-        # noinspection PyBroadException
-        try:
-            subprocess.run([aria2c_path, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    # noinspection PyBroadException
+    try:
+        subprocess.run([aria2c_path, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            click.echo("aria2c not found. Please install aria2c to use this command.\n"
-                       "See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information.\n"
-                       "Set the ARIA2C_PATH environment variable if aria2c is installed but not in PATH.\n"
-                       "The easiest installation method is using the terminal:\n"
-                       "run sudo apt install aria2 (Debian/Ubuntu), sudo dnf install aria2 (Fedora), or sudo pacman -S aria2 (Arch).\n")
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        click.echo("aria2c not found. Please install aria2c to use this command.\n"
+                   "See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information.\n"
+                   "Set the ARIA2C_PATH environment variable if aria2c is installed but not in PATH.\n"
+                   "The easiest installation method is using the terminal:\n"
+                   "run sudo apt install aria2 (Debian/Ubuntu), sudo dnf install aria2 (Fedora), or sudo pacman -S aria2 (Arch).\n")
 
-            raise click.ClickException("aria2c not found") from e
+        raise click.ClickException(f"{aria2c_path} not found:\n{e}") from e
 
     return str(aria2c_path)
 
@@ -102,6 +91,8 @@ def onboard_data(ctx, deal_id: int, output_dir: str, port: int, host: str | None
     """
     \b
     Download data for a deal using aria2 downloader.
+
+    \b
     Unknown [OPTIONS] are passed directly to aria2c, allowing for flexible configuration.
     See aria2c --help for available options.
 

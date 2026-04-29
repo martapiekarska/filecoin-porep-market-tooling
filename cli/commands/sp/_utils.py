@@ -1,7 +1,10 @@
 import click
 
+from cli.commands import utils as commands_utils
 from cli.commands.sp._sp import sp_private_key
+from cli.services.contracts.client_contract import ClientContract
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealProposal, PoRepMarket
+from cli.services.web3_service import Web3Service
 
 
 def accept_deal(deal: PoRepMarketDealProposal) -> str:
@@ -26,3 +29,17 @@ def reject_deal(deal: PoRepMarketDealProposal) -> str:
     click.echo(f"Deal id {deal.deal_id} rejected: {tx_hash}")
 
     return tx_hash
+
+
+def get_deal_allocations(deal: PoRepMarketDealProposal) -> list[dict]:
+    manifest = commands_utils.fetch_manifest(deal.manifest_location, show_manifest=False, quiet=True, retries=10)
+    pieces = manifest[0]["pieces"]
+
+    deal_allocations = ClientContract().get_client_allocation_ids_per_deal(deal.deal_id)
+    state_allocations = Web3Service().state_get_allocations(ClientContract().address().to_actor_id())
+
+    return commands_utils.match_deal_allocations(pieces, state_allocations, deal_allocations)
+
+
+def get_deal_allocations_by_id(deal_id: int) -> list[dict]:
+    return get_deal_allocations(PoRepMarket().get_deal_proposal(deal_id))
