@@ -13,7 +13,7 @@ def get_allocations(deal_id: int):
     """
     Get client allocations for a deal.
 
-    DEAL_ID - The id of the deal to match.
+    DEAL_ID - The id of the deal to get allocations for.
     """
 
     deal = PoRepMarket().get_deal_proposal(deal_id)

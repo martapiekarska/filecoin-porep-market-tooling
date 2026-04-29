@@ -50,9 +50,9 @@ def _write_aria2c_input_file(manifest: list[dict], download_host: str, output_di
 
     pieces = manifest[0]["pieces"]
 
-    with open(aria2_file, "w", encoding="utf-8") as f:
-        click.echo("\n")
+    click.echo(f"\nDownloading {len(pieces)} .car files:\n")
 
+    with open(aria2_file, "w", encoding="utf-8") as f:
         for piece in pieces:
             storage_path = piece["storagePath"]
             output_file = (output_dir / storage_path).resolve()
@@ -68,9 +68,7 @@ def _write_aria2c_input_file(manifest: list[dict], download_host: str, output_di
             f.write(f"  out={output_file.name}\n")
             f.write(f"  dir={output_file.parent}\n")
 
-            click.echo(f"Download {download_url} -> {output_file}")
-
-        click.confirm("\n\nContinue?", default=True, abort=True)
+            click.echo(f"  {download_url} -> {output_file}")
 
     return aria2_file.resolve()
 
@@ -92,17 +90,20 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
     return manifest_file.resolve()
 
 
-@click.command()
+@click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
 @click.argument("deal_id", type=click.IntRange(min=0))
 @click.option("--output-dir", type=click.Path(), required=True, help="Directory to save downloaded pieces.")
-@click.option("--jobs", default=1, type=click.IntRange(min=1), show_default=True, help="Number of parallel downloads.")
+@click.option("--host", help="Host to use for .car files download.  [default: same host as manifest URL]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
               help="Port to use for .car files download.")
-@click.option("--host", help="Host to use for .car files download.  [default: same host as manifest URL]")
+@click.pass_context
 # TODO add commP files verification after download
-def onboard_data(deal_id: int, output_dir: str, jobs: int, port: int, host: str | None = None):
+def onboard_data(ctx, deal_id: int, output_dir: str, port: int, host: str | None = None):
     """
-    Onboard (download) data for a given deal using aria2 downloader.
+    \b
+    Download data for a deal using aria2 downloader.
+    Unknown [OPTIONS] are passed directly to aria2c, allowing for flexible configuration.
+    See aria2c --help for available options.
 
     DEAL_ID - ID of the deal to download pieces for.
 
@@ -132,23 +133,22 @@ def onboard_data(deal_id: int, output_dir: str, jobs: int, port: int, host: str 
 
     try:
         click.echo("\n")
-        try:
-            subprocess.run(
-                [
-                    aria2c_path,
-                    "-i", str(aria2_file),
-                    "-j", str(jobs),
-                    "-x", "4",
-                    "-s", "4",
-                    "--continue=true",
-                    "--auto-file-renaming=false",
-                    "--summary-interval=30",
-                    "--console-log-level=warn",
-                ],
-                check=True,
-            )
-            #
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"aria2c failed with exit code {e.returncode}") from e
+
+        command = [aria2c_path,
+                   "-i", str(aria2_file),
+                   "-x", "4",
+                   "-s", "4",
+                   "--continue=true",
+                   "--auto-file-renaming=false",
+                   "--summary-interval=30",
+                   "--console-log-level=warn"] + ctx.args
+
+        click.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
+        click.echo("\n")
+        subprocess.run(command, check=True)
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"aria2c failed with exit code {e.returncode}") from e
+
     finally:
         aria2_file.unlink(missing_ok=True)
