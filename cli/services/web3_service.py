@@ -8,7 +8,7 @@ from hexbytes import HexBytes
 from web3 import Web3
 from web3.contract import Contract
 from web3.exceptions import Web3RPCError
-from web3.types import TxParams, BlockIdentifier, TxData, TxReceipt, RPCEndpoint
+from web3.types import BlockIdentifier, TxData, TxReceipt, RPCEndpoint, TxParams
 
 from cli import utils
 
@@ -131,7 +131,7 @@ class Web3Service:
         return self._w3.keccak(text=text)
 
     def call(self, tx_params: TxParams, block_identifier: BlockIdentifier = "latest") -> str:
-        return self._w3.eth.call(tx_params, block_identifier).to_0x_hex()
+        return self._w3.eth.call(tx_params, block_identifier=block_identifier).to_0x_hex()
 
     def contract(self, address: Address, abi: list[dict]) -> Contract:
         return self._w3.eth.contract(address=address, abi=abi)
@@ -178,14 +178,14 @@ class Web3Service:
             pending_nonce = self.get_transaction_count(from_address, "pending")
 
             while pending_nonce > latest_nonce:
+                # update pending_nonce loop
+                click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
+
                 while pending_nonce > latest_nonce:
                     # update pending_nonce loop
-                    click.echo(f"Address {from_address} has {pending_nonce - latest_nonce} pending transaction(s), waiting...")
                     latest_nonce = self.get_transaction_count(from_address, "latest")
-
                     time.sleep(5)
 
-                # update pending_nonce loop
                 pending_nonce = self.get_transaction_count(from_address, "pending")
 
             return pending_nonce

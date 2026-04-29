@@ -39,7 +39,7 @@ class SPRegistryProviderInfo(SPRegistryProvider):
     blocked: bool
 
     @staticmethod
-    def from_web3(provider_id, data) -> "SPRegistryProviderInfo":
+    def from_web3(provider_id: int, data) -> "SPRegistryProviderInfo":
         if not Address(data[0]):
             raise RuntimeError("Provider not found")
 
@@ -48,6 +48,8 @@ class SPRegistryProviderInfo(SPRegistryProvider):
             provider_id=int(provider_id),
             organization_address=Address(data[0]),
             payee_address=Address(data[1]),
+            paused=bool(data[2]),
+            blocked=bool(data[3]),
             capabilities=SPRegistrySLIThresholds(
                 retrievability_bps=int(data[4][0]),
                 bandwidth_mbps=int(data[4][1]),
@@ -55,13 +57,11 @@ class SPRegistryProviderInfo(SPRegistryProvider):
                 indexing_pct=int(data[4][3]),
             ),
             available_bytes=int(data[5]),
+            committed_bytes=int(data[6]),
+            pending_bytes=int(data[7]),
             price_per_sector_per_month=int(data[8]),
             min_deal_duration_days=int(data[9]),
             max_deal_duration_days=int(data[10]),
-            paused=bool(data[2]),
-            blocked=bool(data[3]),
-            committed_bytes=int(data[6]),
-            pending_bytes=int(data[7]),
         )
 
 
@@ -181,3 +181,34 @@ class SPRegistry(ContractService):
     def is_authorized_for_provider(self, caller: Address, provider_id: int) -> bool:
         return self.contract.functions.isAuthorizedForProvider(caller, provider_id).call()
 
+    # @notice Block a provider (admin only, excluded from matching)
+    # @param provider The provider to block
+    def block_provider(self, provider_id: int, from_private_key: PrivateKeyType) -> str:
+        return self.sign_and_send_tx(
+            self.contract.functions.blockProvider(provider_id),
+            from_private_key
+        )
+
+    # @notice Unblock a provider (admin only)
+    # @param provider The provider to unblock
+    def unblock_provider(self, provider_id: int, from_private_key: PrivateKeyType) -> str:
+        return self.sign_and_send_tx(
+            self.contract.functions.unblockProvider(provider_id),
+            from_private_key
+        )
+
+    # @notice Pause a provider (excluded from matching)
+    # @param provider The provider to pause
+    def pause_provider(self, provider_id: int, from_private_key: PrivateKeyType) -> str:
+        return self.sign_and_send_tx(
+            self.contract.functions.pauseProvider(provider_id),
+            from_private_key
+        )
+
+    # @notice Unpause a provider (available for matching)
+    # @param provider The provider to unpause
+    def unpause_provider(self, provider_id: int, from_private_key: PrivateKeyType) -> str:
+        return self.sign_and_send_tx(
+            self.contract.functions.unpauseProvider(provider_id),
+            from_private_key
+        )
