@@ -271,6 +271,42 @@ is separate from and in addition to the regular deal payment rail (`client init-
    spends from the same FileCoinPay account the client funded. In `tools/sp-pipeline.sh`, set
    `ONBOARD_DATA_DOWNLOADER="lpr"` and `PAYEE_KEY_FILE`.
 
+### Legacy (v1) repair with a manually chosen source
+
+Datasets from the v1 PoRep market are repaired onto a regular v2 deal. The CLI doesn't read v1 contracts, so the client
+supplies the dataset's original manifest and the healthy source, and nothing is looked up or detected:
+
+1. **Client:** prepare the repair manifest from the original manifest and the healthy SP's piece server / `sp-proxy`
+   URL. The original manifest can be a local file, a manifest URL, or a [toads.directory](https://toads.directory/)
+   dataset page:
+
+   ```bash
+   python3 ./porep_tooling_cli.py client prepare-legacy-repair https://toads.directory/dataset/<id> \
+     --repair-source-url https://<healthy-sp-host>:<port>
+   ```
+
+   toads.directory serves data-prep-standard super-manifests, which are converted to this CLI's manifest format: each
+   piece's `fileSize` is its CAR size, `pieceSize` its minimal padded size, and the smallest piece is the DAG piece.
+   The source is embedded in the manifest (`repairSource`), so the new SP knows where to fetch from. The command
+   checks the source serves the data at the expected sizes and shows the estimated retrieval cost.
+
+2. **Client:** host the written manifest at any URL and propose the deal. The SP is matched like for any other deal, and
+   the retrieval cost is paid into its payee account as for `--repair`:
+
+   ```bash
+   python3 ./porep_tooling_cli.py client propose-deal <hosted-repair-manifest-url> ... \
+     --repair-legacy \
+     --repair-source-url https://<healthy-sp-host>:<port>
+   ```
+
+   `--repair-source-url` must match the source embedded in the manifest. `client pay-repair-retrieval <new-deal-id>`
+   retries the payment step and picks up the embedded source.
+
+3. **New SP:** `sp onboard-data <new-deal-id> --downloader lpr ...` (or `aria2` if the source serves for free) fetches
+   from the embedded source; `--host` / `--port` override it.
+
+A source that doesn't serve the dataset's pieces, such as an SP that is down, is refused.
+
 To have a specific SP store the repair copy, an admin proposes the deal with `admin propose-deal-for-offer`, and the
 client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only action.
 

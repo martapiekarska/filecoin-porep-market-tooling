@@ -7,7 +7,7 @@ import click
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
-from cli.commands.repair_utils import GIB_BYTES, RetrievalSource, find_healthy_source
+from cli.commands.repair_utils import GIB_BYTES, RetrievalSource, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
@@ -140,13 +140,18 @@ def pay_repair_retrieval(deal_id: int,
     if deal.deal.state not in (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
         raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected PROPOSED, ACCEPTED or ACTIVE")
 
-    ensure_repairable(deal)
-
     if repair_of_deal_id is not None:
         ensure_same_dataset(deal, repair_of_deal_id)
 
     manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
     pieces = manifest[0]["pieces"]
+
+    # legacy repair: the new SP fetches from the source embedded in the deal manifest, so price that one
+    embedded_source = get_manifest_repair_source(manifest)
+    if embedded_source:
+        if source_url and source_url.rstrip("/") != embedded_source:
+            raise click.ClickException(f"Deal ID {deal_id} manifest repair source is {embedded_source}, not {source_url}")
+        source_url = embedded_source
 
     # a source found before proposing is only reusable if the deal did not land with that same SP
     if price_per_gib is None and (source is None or source.provider_id == deal.deal.provider_id):

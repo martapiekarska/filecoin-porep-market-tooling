@@ -10,7 +10,7 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.repair_utils import find_healthy_source
+from cli.commands.repair_utils import find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -250,8 +250,8 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--output-dir", type=click.Path(file_okay=False), required=True,
               help="Directory to save downloaded pieces.")
 @click.option("--host",
-              help="Host to use for .car files download.  [default: same host as manifest URL; "
-                   "with --downloader lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
+              help="Host to use for .car files download.  [default: the manifest's repair source for legacy repairs, else same host "
+                   "as manifest URL; with --downloader lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
               help="Port to use for .car files download.")
 @click.option("--force", is_flag=True, default=False,
@@ -291,6 +291,10 @@ def onboard_data(ctx,
     paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
     The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
     dataset whose piece endpoint serves the data), or --host:--port if given.
+
+    \b
+    For legacy (v1) repairs the source embedded in the deal manifest (`client prepare-legacy-repair`)
+    is used by both downloaders unless --host is given.
 
     DEAL_ID - The ID of the deal to download pieces for.
 
@@ -341,9 +345,14 @@ def onboard_data(ctx,
 
     parsed_url = commands_utils.validate_and_parse_url(host or deal.data.manifest_location)
     download_host = f"{parsed_url.scheme or 'http'}://{parsed_url.hostname}:{port}"
+    repair_source = get_manifest_repair_source(manifest)
+
+    if not host and repair_source:
+        click.echo(f"Using repair source from the deal manifest: {repair_source}")
+        download_host = repair_source
 
     if downloader == "lpr":
-        if not host:
+        if not host and not repair_source:
             download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
 
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
