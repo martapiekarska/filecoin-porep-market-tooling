@@ -10,6 +10,7 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.self_update import SelfUpdateService
@@ -38,25 +39,58 @@ def _get_aria2c_path() -> str:
     return str(aria2c_path)
 
 
-def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir: Path, no_summary: bool) -> Path:
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        aria2_file = Path(f.name)
+def _get_retrieval_client_path() -> str:
+    retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
 
+    if retrieval_client_path != "retrieval-client":
+        retrieval_client_path = Path(retrieval_client_path).resolve()
+
+    # noinspection PyBroadException
+    try:
+        subprocess.run([retrieval_client_path, "fetch", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        click.echo("retrieval-client not found. Please install large-paid-retrievals retrieval-client to use --downloader lpr.\n"
+                   "See https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers for installation instructions:\n"
+                   "  git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals && "
+                   "go build -o bin/retrieval-client ./cmd/retrieval-client\n"
+                   "Set the RETRIEVAL_CLIENT_PATH environment variable if retrieval-client is installed but not in PATH.\n")
+
+        raise click.ClickException(f"{retrieval_client_path} not found:\n{e}") from e
+
+    return str(retrieval_client_path)
+
+
+def _echo_download_summary(pieces: list[dict], no_summary: bool):
     pieces_filesize_bytes = sum(piece.get("fileSize", 0) for piece in pieces)
     pieces_piecesize_bytes = sum(piece.get("pieceSize", 0) for piece in pieces)
     click.echo(f"Downloading {len(pieces)} .car files with total fileSize "
                f"{humanfriendly.format_size(pieces_filesize_bytes)} = {humanfriendly.format_size(pieces_filesize_bytes, binary=True)}, "
                f"{utils.bytes_to_sectors(pieces_piecesize_bytes, PoRepMarket().get_sector_size_bytes())} sectors" + (":" if not no_summary else ""))
 
+
+def _resolve_piece_output_file(piece: dict, output_dir: Path) -> Path:
+    storage_path = piece["storagePath"]
+    output_file = (output_dir / storage_path).resolve()
+
+    # disallow path traversal outside of the output directory
+    if output_dir not in output_file.parents:
+        raise click.ClickException(f"Invalid manifest piece storagePath: {storage_path}")
+
+    return output_file
+
+
+def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir: Path, no_summary: bool) -> Path:
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        aria2_file = Path(f.name)
+
+    _echo_download_summary(pieces, no_summary)
+
     with open(aria2_file, "w", encoding="utf-8") as f:
         for piece in pieces:
-            storage_path = piece["storagePath"]
-            output_file = (output_dir / storage_path).resolve()
-            piece_name = storage_path.removesuffix(".car")
-
-            # disallow path traversal outside of the output directory
-            if output_dir not in output_file.parents:
-                raise click.ClickException(f"Invalid manifest piece storagePath: {storage_path}")
+            output_file = _resolve_piece_output_file(piece, output_dir)
+            piece_name = piece["storagePath"].removesuffix(".car")
 
             download_url = f"{download_host}/piece/{piece_name}"
 
@@ -72,6 +106,101 @@ def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir:
         click.echo("\n")
 
     return aria2_file.resolve()
+
+
+def _write_lpr_cid_file(pieces: list[dict], download_host: str, output_dir: Path, no_summary: bool) -> Path:
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        cid_file = Path(f.name)
+
+    _echo_download_summary(pieces, no_summary)
+
+    with open(cid_file, "w", encoding="utf-8") as f:
+        for piece in pieces:
+            output_file = _resolve_piece_output_file(piece, output_dir)
+            f.write(f"{piece['pieceCid']}\n")
+
+            if not no_summary:
+                click.echo(f"  {download_host}/piece/{piece['pieceCid']} (paid, large-paid-retrievals) -> {output_file}")
+
+    if not no_summary:
+        click.echo("(use --no-summary to skip this summary)")
+        click.echo("\n")
+
+    return cid_file.resolve()
+
+
+# retrieval-client always writes <pieceCid>.car into --out-dir; move each piece to its manifest storagePath
+def _move_lpr_downloads(pieces: list[dict], output_dir: Path) -> list[tuple[dict, Path]]:
+    result = []
+
+    for piece in pieces:
+        downloaded_file = output_dir / f"{piece['pieceCid']}.car"
+        output_file = _resolve_piece_output_file(piece, output_dir)
+
+        if not downloaded_file.exists():
+            raise click.ClickException(f"retrieval-client did not produce {downloaded_file}")
+
+        if downloaded_file.resolve() != output_file:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            downloaded_file.replace(output_file)
+
+        result.append((piece, output_file))
+
+    return result
+
+
+def _download_with_lpr(ctx,
+                       deal,
+                       pieces: list[dict],
+                       download_host: str,
+                       output_dir: Path,
+                       no_summary: bool,
+                       retrieval_key_file: str | None,
+                       claim_allocations: str | None):
+    #
+    retrieval_client_path = _get_retrieval_client_path()
+    cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
+
+    try:
+        # pay through the same chain, FileCoinPay contract and token the client funded with `client pay-repair-retrieval`
+        defaults = {
+            "--pay-rpc-url": utils.get_env_required("RPC_URL"),
+            "--pay-payments-address": str(FileCoinPay().address()),
+            "--pay-token-address": str(deal.payment.payment_token),
+        }
+
+        command = [retrieval_client_path, "fetch",
+                   "--sp-base-url", download_host,
+                   "--cid-file", str(cid_file),
+                   "--out-dir", str(output_dir)]
+
+        for option, value in defaults.items():
+            if not any(arg == option or arg.startswith(f"{option}=") for arg in ctx.args):
+                command += [option, value]
+
+        # without --retrieval-key-file, retrieval-client reads its key from the FILPAY_PRIVATE_KEY env var
+        if retrieval_key_file:
+            command += ["--filpay-private-key-file", str(Path(retrieval_key_file).resolve())]
+
+        command += ctx.args
+
+        utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
+        click.echo("\n")
+        subprocess.run(command, check=True)
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"retrieval-client failed with exit code {e.returncode}") from e
+
+    finally:
+        cid_file.unlink(missing_ok=True)
+
+    downloaded = _move_lpr_downloads(pieces, output_dir)
+
+    if claim_allocations:
+        for piece, output_file in downloaded:
+            subprocess.run([sys.executable, sys.argv[0], "sp", "claim-allocations", claim_allocations, str(deal.deal.deal_id),
+                            "--cars-dir", str(output_file.parent),
+                            "--cid", piece["pieceCid"]], check=True)
 
 
 def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -> Path:
@@ -107,6 +236,12 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
               help="Don't print the initial download summary.  [default: false]")
 @click.option("--claim-allocations", type=click.Choice(["curio", "boost"], case_sensitive=False),
               help="Claim allocation(s) for each piece right after download using specified software.  [default: none]")
+@click.option("--downloader", type=click.Choice(["aria2", "lpr"], case_sensitive=False), default="aria2", show_default=True,
+              help="Downloader to use: aria2 for free HTTP piece servers, lpr for paid retrieval from a "
+                   "large-paid-retrievals sp-proxy (e.g. FCSS repair from a healthy SP).")
+@click.option("--retrieval-key-file", envvar="SP_RETRIEVAL_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
+              help="With --downloader lpr: file with the retrieval wallet private key passed to retrieval-client.  "
+                   "[default: retrieval-client reads FILPAY_PRIVATE_KEY env var]")
 @click.pass_context
 # TODO LATER add commP files verification after download
 def onboard_data(ctx,
@@ -116,24 +251,31 @@ def onboard_data(ctx,
                  host: str | None = None,
                  force: bool = False,
                  no_summary: bool = False,
-                 claim_allocations: str | None = None):
+                 claim_allocations: str | None = None,
+                 downloader: str = "aria2",
+                 retrieval_key_file: str | None = None):
     """
     \b
-    Download data for a deal using aria2 downloader.
+    Download data for a deal using aria2 downloader or large-paid-retrievals retrieval-client.
 
     \b
-    Unknown [OPTIONS] are passed directly to aria2c, allowing for flexible configuration.
-    See aria2c --help for available options.
+    Unknown [OPTIONS] are passed directly to aria2c / retrieval-client fetch, allowing for flexible configuration.
+    See aria2c --help / retrieval-client fetch --help for available options.
+
+    \b
+    With --downloader lpr the data is fetched (and paid for) from the large-paid-retrievals sp-proxy at
+    --host:--port, using the retrieval wallet's FileCoinPay funds (see `client pay-repair-retrieval`).
 
     DEAL_ID - The ID of the deal to download pieces for.
 
     \b
     See https://aria2.github.io/ and https://github.com/aria2/aria2 for more information about aria2 and installation instructions.
+    See https://github.com/fidlabs/large-paid-retrievals for more information about retrieval-client.
     """
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    aria2c_path = _get_aria2c_path()
+    aria2c_path = _get_aria2c_path() if downloader == "aria2" else None
 
     click.echo("Fetching deal details...")
     deal = PoRepMarketViewHelper().get_deal_view(deal_id)
@@ -173,6 +315,13 @@ def onboard_data(ctx,
 
     parsed_url = commands_utils.validate_and_parse_url(host or deal.data.manifest_location)
     download_host = f"{parsed_url.scheme or 'http'}://{parsed_url.hostname}:{port}"
+
+    if downloader == "lpr":
+        _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
+                           no_summary, retrieval_key_file, claim_allocations)
+        return
+
+    assert aria2c_path
     aria2_file = _write_aria2c_input_file(pieces_to_download if not force else pieces, download_host, _output_dir, no_summary)
 
     try:

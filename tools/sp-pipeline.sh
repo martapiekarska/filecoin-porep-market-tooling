@@ -5,11 +5,29 @@ readonly ONBOARD_DATA_OUTPUT_DIR=""
 readonly CLAIM_ALLOCATIONS_SOFTWARE="curio"
 # readonly CLAIM_ALLOCATIONS_SOFTWARE="boost"
 
+# Downloader for the data: "aria2" (free HTTP piece server) or "lpr" (paid retrieval through a
+# large-paid-retrievals sp-proxy, e.g. FCSS repair from a healthy SP; requires retrieval-client).
+readonly ONBOARD_DATA_DOWNLOADER="aria2"
+# readonly ONBOARD_DATA_DOWNLOADER="lpr"
+
+# Port of the piece server at the manifest URL host: 7777 for aria2 by default, the sp-proxy port (e.g. 8787) for lpr.
+readonly ONBOARD_DATA_PORT="7777"
+# readonly ONBOARD_DATA_PORT="8787"
+
+# With lpr: file with the retrieval wallet private key funded by the client's `client pay-repair-retrieval`.
+# Leave empty to use SP_RETRIEVAL_KEY_FILE or retrieval-client's FILPAY_PRIVATE_KEY env var.
+readonly RETRIEVAL_KEY_FILE=""
+
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CLI_PATH="${SCRIPT_DIR}/../porep_tooling_cli.py"
 
 set -euo pipefail
+
+onboard_data_args=(--output-dir "${ONBOARD_DATA_OUTPUT_DIR}" --downloader "${ONBOARD_DATA_DOWNLOADER}" --port "${ONBOARD_DATA_PORT}")
+if [[ -n "${RETRIEVAL_KEY_FILE}" ]]; then
+    onboard_data_args+=(--retrieval-key-file "${RETRIEVAL_KEY_FILE}")
+fi
 
 mapfile -t completed_deals < <(python3 "${CLI_PATH}" sp get-deals --provider-id "$PROVIDER_ID" completed | jq -r '.[].deal_id')
 echo "Completed deals: ${completed_deals[*]}"
@@ -17,8 +35,8 @@ echo "Completed deals: ${completed_deals[*]}"
 for deal_id in "${completed_deals[@]}"; do
     echo "Processing deal id ${deal_id}..."
 
-    echo "Downloading data for deal id ${deal_id}..."
-    python3 "${CLI_PATH}" sp onboard-data "${deal_id}" --output-dir "${ONBOARD_DATA_OUTPUT_DIR}" < <(yes)
+    echo "Downloading data for deal id ${deal_id} using ${ONBOARD_DATA_DOWNLOADER}..."
+    python3 "${CLI_PATH}" sp onboard-data "${deal_id}" "${onboard_data_args[@]}" < <(yes)
 
     echo "Claiming allocations for deal id ${deal_id}..."
     python3 "${CLI_PATH}" sp claim-allocations "${CLAIM_ALLOCATIONS_SOFTWARE}" "${deal_id}" --cars-dir "${ONBOARD_DATA_OUTPUT_DIR}" < <(yes)

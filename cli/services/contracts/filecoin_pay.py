@@ -153,6 +153,14 @@ class FileCoinPay(ContractService):
             signer
         )
 
+    # @notice Deposits tokens from the message sender into the `to` account (requires prior ERC20 approval).
+    #     Unlike the permit variants, `to` may differ from the sender, so it can fund a third-party account.
+    # @param token The ERC20 token address to deposit.
+    # @param to The address whose account will be credited.
+    # @param amount The amount of tokens to deposit.
+    def deposit(self, token: EthAddress, to: EthAddress, amount: int, signer: TxSigner) -> TxInfo:
+        return self.sign_and_send_tx(self.contract.functions.deposit(token, to, amount), signer)
+
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction.
     # @param token The ERC20 token address to deposit.
     # @param to The address whose account will be credited (must be the permit signer).
