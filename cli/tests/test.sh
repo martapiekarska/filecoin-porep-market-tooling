@@ -45,7 +45,6 @@ set +a
   python3 "${CLI_PATH}" client deposit-for-deals --help          >/dev/null &&
   python3 "${CLI_PATH}" client propose-deal --help               >/dev/null &&
   python3 "${CLI_PATH}" client deposit-amount --help             >/dev/null &&
-  python3 "${CLI_PATH}" client repair-manifest --help            >/dev/null &&
   python3 "${CLI_PATH}" client pay-repair-retrieval --help       >/dev/null &&
   ! (python3 "${CLI_PATH}" client get-deal    4242 >/dev/null 2>&1)         &&
 

@@ -10,6 +10,7 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.commands.repair_utils import find_healthy_source
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -121,7 +122,7 @@ def _write_lpr_cid_file(pieces: list[dict], download_host: str, output_dir: Path
             f.write(f"{piece['pieceCid']}\n")
 
             if not no_summary:
-                click.echo(f"  {download_host}/piece/{piece['pieceCid']} (paid, large-paid-retrievals) -> {output_file}")
+                click.echo(f"  {download_host}/piece/{piece['pieceCid']} (large-paid-retrievals) -> {output_file}")
 
     if not no_summary:
         click.echo("(use --no-summary to skip this summary)")
@@ -249,7 +250,8 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--output-dir", type=click.Path(file_okay=False), required=True,
               help="Directory to save downloaded pieces.")
 @click.option("--host",
-              help="Host to use for .car files download.  [default: same host as manifest URL]")
+              help="Host to use for .car files download.  [default: same host as manifest URL; "
+                   "with --downloader lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
               help="Port to use for .car files download.")
 @click.option("--force", is_flag=True, default=False,
@@ -285,8 +287,10 @@ def onboard_data(ctx,
     See aria2c --help / retrieval-client fetch --help for available options.
 
     \b
-    With --downloader lpr the data is fetched (and paid for) from the large-paid-retrievals sp-proxy at
-    --host:--port, paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
+    With --downloader lpr the data is fetched (and paid for if needed) from a large-paid-retrievals sp-proxy,
+    paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
+    The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
+    dataset whose piece endpoint serves the data), or --host:--port if given.
 
     DEAL_ID - The ID of the deal to download pieces for.
 
@@ -339,6 +343,9 @@ def onboard_data(ctx,
     download_host = f"{parsed_url.scheme or 'http'}://{parsed_url.hostname}:{port}"
 
     if downloader == "lpr":
+        if not host:
+            download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
+
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
                            no_summary, payee_key_file, claim_allocations)
         return

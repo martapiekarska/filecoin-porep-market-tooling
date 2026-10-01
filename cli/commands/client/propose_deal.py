@@ -2,9 +2,12 @@ import sys
 
 import click
 
+from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _repair
 from cli.commands.client._client import client_signer
+from cli.commands.repair_utils import find_healthy_source
+from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.porep_market import PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.contracts.usdc_token import USDCToken
@@ -40,14 +43,14 @@ from cli.services.web3_service import EthAddress
               prompt="Enter IPNI indexing guarantee in percentage; 0 means \"don't care\"",
               help="IPNI indexing guarantee in percentage; 0 means \"don't care\".")
 @click.option("--repair", is_flag=True, default=False,
-              help="FCSS repair: also make a one-off payment for the new SP's paid retrieval of the data from a healthy SP.  [default: false]")
+              help="FCSS repair: also pay the one-off retrieval of the data from a healthy SP for the SP the deal is matched to.  [default: false]")
 @click.option("--repair-of", type=click.IntRange(min=1),
-              help="With --repair: deal ID being repaired; MANIFEST_URL must serve the same manifest (see `client repair-manifest`).")
-@click.option("--repair-provider-id",
-              help="With --repair: optional provider (miner actor) ID of the new SP expected to get the deal; "
-                   "the repair retrieval is not paid if the deal is assigned to another SP.")
+              help="With --repair: deal ID being repaired; MANIFEST_URL must serve the same manifest (e.g. that deal's own manifest URL).")
+@click.option("--repair-source-url",
+              help="With --repair, override: base URL of the healthy SP's piece server / sp-proxy.  "
+                   "[default: auto-detected from other providers' deals for the same dataset]")
 @click.option("--repair-price-per-gib", type=click.FloatRange(min=0, min_open=True),
-              help="With --repair: healthy SP's sp-proxy rate in decimal --payment-token tokens per GiB (e.g., 0.01).")
+              help="With --repair, override: retrieval price in decimal --payment-token tokens per GiB.  [default: quoted by the healthy SP]")
 def propose_deal(manifest_url: str,
                  retrievability_pct: int,
                  bandwidth_mbps: int,
@@ -59,38 +62,52 @@ def propose_deal(manifest_url: str,
                  deal_type: str,
                  repair: bool = False,
                  repair_of: int | None = None,
-                 repair_provider_id: str | None = None,
+                 repair_source_url: str | None = None,
                  repair_price_per_gib: float | None = None):
     """
     Interactively propose a deal from MANIFEST_URL with the specified parameters.
 
     \b
     1. Fetch and validate manifest from a given MANIFEST_URL,
-    2. prepare and confirm deal proposal details,
-    3. propose deal on-chain via PoRep Market contract,
-    4. with --repair: deposit the one-off retrieval cost into the FileCoinPay account of the
-       new deal's SP payee (see `client pay-repair-retrieval`).
+    2. with --repair: find a healthy SP serving the repaired dataset and its retrieval price,
+    3. prepare and confirm deal proposal details,
+    4. propose deal on-chain via PoRep Market contract (the SP is matched as for any other deal),
+    5. with --repair: deposit the one-off retrieval cost into the FileCoinPay account of the
+       matched SP's payee (see `client pay-repair-retrieval`).
 
     MANIFEST_URL - URL of the deal manifest file to use.
     """
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    required_repair_options = {"--repair-of": repair_of,
-                               "--repair-price-per-gib": repair_price_per_gib}
-    repair_options = {**required_repair_options, "--repair-provider-id": repair_provider_id}
+    repair_options = {"--repair-of": repair_of,
+                      "--repair-source-url": repair_source_url,
+                      "--repair-price-per-gib": repair_price_per_gib}
+    source = None
 
     if repair:
-        missing = [name for name, value in required_repair_options.items() if value is None]
-        if missing:
-            raise click.UsageError(f"--repair requires {', '.join(missing)}")
+        if repair_of is None:
+            raise click.UsageError("--repair requires --repair-of")
+
+        repaired_deal = PoRepMarketViewHelper().get_deal_view(repair_of)
+        _repair.ensure_repairable(repaired_deal)
 
         # check before proposing, so a wrong manifest never creates a deal
-        assert repair_of is not None
-        _, raw_manifest = commands_utils.fetch_manifest(manifest_url, show_manifest=False, quiet=True)
-        if bytes(commands_utils.hash_manifest(raw_manifest)) != bytes(PoRepMarketViewHelper().get_deal_view(repair_of).data.manifest_hash):
-            raise click.ClickException(f"Manifest at {manifest_url} does not match deal ID {repair_of} manifest; "
-                                       f"use `{sys.argv[0]} client repair-manifest {repair_of}` to prepare it.")
+        manifest, raw_manifest = commands_utils.fetch_manifest(manifest_url, show_manifest=False, quiet=True)
+        if bytes(commands_utils.hash_manifest(raw_manifest)) != bytes(repaired_deal.data.manifest_hash):
+            raise click.ClickException(f"Manifest at {manifest_url} does not match deal ID {repair_of} manifest "
+                                       f"{repaired_deal.data.manifest_location}")
+
+        # show the repair cost before the proposal is confirmed
+        if repair_price_per_gib is None:
+            source = find_healthy_source(repaired_deal.data.manifest_hash, manifest[0]["pieces"],
+                                         {repaired_deal.deal.provider_id}, repair_source_url)
+
+        price_per_gib = repair_price_per_gib if repair_price_per_gib is not None else source.price_per_gib
+        token = ERC20Contract(EthAddress.from_any(payment_token))
+        cost = _repair.estimate_retrieval_cost(manifest[0]["pieces"], _repair.price_to_wei(price_per_gib, token.decimals()))
+        click.echo(f"\nEstimated one-off repair retrieval cost, paid after the deal is matched: "
+                   f"{utils.str_from_wei(cost, token.decimals())} {token.symbol()}\n")
 
     elif any(value is not None for value in repair_options.values()):
         raise click.UsageError(f"{', '.join(name for name, value in repair_options.items() if value is not None)}: only valid with --repair")
@@ -107,9 +124,9 @@ def propose_deal(manifest_url: str,
                                           PoRepMarketDealType.from_web3(deal_type))
 
     if repair:
-        assert repair_price_per_gib
-        retry_command = (f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'} --price-per-gib {repair_price_per_gib} "
-                         f"--repair-of {repair_of}" + (f" --provider-id {repair_provider_id}" if repair_provider_id else "") + "`")
+        overrides = (f" --source-url {repair_source_url}" if repair_source_url else "") + \
+                    (f" --price-per-gib {repair_price_per_gib}" if repair_price_per_gib is not None else "")
+        retry_command = f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'} --repair-of {repair_of}{overrides}`"
 
         # e.g. the proposal ran as dry run after declining the final confirmation
         if deal_id is None:
@@ -117,7 +134,7 @@ def propose_deal(manifest_url: str,
             return
 
         click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
-        _repair.pay_repair_retrieval(deal_id, repair_price_per_gib, repair_of, repair_provider_id, payment_token)
+        _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, payment_token, source)
 
 
 @click.command(hidden=True)

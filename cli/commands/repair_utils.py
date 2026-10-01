@@ -1,0 +1,287 @@
+import base64
+import ipaddress
+import json
+import logging
+import re
+from decimal import Decimal
+from math import ceil
+
+import click
+import requests
+from web3.types import RPCEndpoint
+
+from cli import utils
+from cli.commands import utils as commands_utils
+from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
+from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
+from cli.services.web3_service import ActorId, Web3Service
+
+# FCSS repair: find a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges.
+#
+# Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
+# deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
+# sample pieces of the expected size. The price comes from the LPR sp-proxy `402` challenge for those pieces
+# (https://github.com/fidlabs/large-paid-retrievals/blob/main/docs/mpp-filecoinpay.md); a `200` means free.
+
+logger = logging.getLogger(__name__)
+
+GIB_BYTES = 2 ** 30
+CID_CONTACT_URL = "https://cid.contact"
+PROBE_SAMPLE_PIECES = 2
+PROBE_TIMEOUT_SECONDS = 30
+
+# multiaddr protocol codes needed to find HTTP endpoints: code -> (name, value size in bytes, 0 = none, -1 = varint-prefixed)
+_MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("dns4", -1), 55: ("dns6", -1), 6: ("tcp", 2),
+                        480: ("http", 0), 443: ("https", 0), 448: ("tls", 0), 477: ("ws", 0), 478: ("wss", 0), 421: ("p2p", -1)}
+
+# /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
+_HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
+
+
+@utils.json_dataclass()
+class PieceProbe:
+    status: str  # free | paid | private | unavailable
+    size_bytes: int | None = None
+    price: Decimal | None = None  # total quoted price for the piece, in decimal tokens
+    payee: str | None = None
+    detail: str | None = None
+
+
+@utils.json_dataclass()
+class RetrievalSource:
+    base_url: str
+    price_per_gib: Decimal  # 0 when the source serves for free
+    deal_id: int | None = None  # None for a manually given source URL
+    provider_id: ActorId | None = None
+
+    def is_free(self) -> bool:
+        return self.price_per_gib == 0
+
+
+def _read_varint(data: bytes, offset: int) -> tuple[int, int]:
+    result = shift = 0
+
+    while True:
+        byte = data[offset]
+        result |= (byte & 0x7F) << shift
+        offset += 1
+        shift += 7
+
+        if not byte & 0x80:
+            return result, offset
+
+
+# minimal binary -> text multiaddr decoding for Filecoin.StateMinerInfo Multiaddrs; returns None on unsupported protocols
+def multiaddr_to_string(raw: bytes) -> str | None:
+    parts = []
+    offset = 0
+
+    try:
+        while offset < len(raw):
+            code, offset = _read_varint(raw, offset)
+
+            if code not in _MULTIADDR_PROTOCOLS:
+                return None
+
+            name, size = _MULTIADDR_PROTOCOLS[code]
+            parts.append(name)
+
+            if size == -1:
+                size, offset = _read_varint(raw, offset)
+                value = raw[offset:offset + size]
+                parts.append(value.decode() if name.startswith("dns") else base64.b32encode(value).decode())
+            elif size:
+                value = raw[offset:offset + size]
+                parts.append(str(ipaddress.ip_address(value)) if name in ("ip4", "ip6") else str(int.from_bytes(value, "big")))
+
+            offset += max(size, 0)
+
+    except (IndexError, ValueError, UnicodeDecodeError):
+        return None
+
+    return "/" + "/".join(parts)
+
+
+def http_base_from_multiaddr(addr: str) -> str | None:
+    match = _HTTP_MULTIADDR.match(addr.strip())
+
+    if not match:
+        return None
+
+    host, port, transport = match.groups()
+    scheme = "https" if transport in ("https", "tls/http", "wss") else "http"
+    host = f"[{host}]" if ":" in host else host
+    return f"{scheme}://{host}:{port}"
+
+
+# Same discovery as LPR retrieval-client (pieceurls): miner PeerId -> cid.contact provider addrs, else on-chain miner multiaddrs
+def discover_provider_http_bases(provider_id: ActorId) -> list[str]:
+    response = Web3Service().w3().provider.make_request(RPCEndpoint("Filecoin.StateMinerInfo"), [str(provider_id), None])
+
+    if "error" in response or not response.get("result"):
+        raise RuntimeError(f"Filecoin.StateMinerInfo({provider_id}) failed: {response.get('error')}")
+
+    miner_info = response["result"]
+    addrs: list[str] = []
+
+    if miner_info.get("PeerId"):
+        try:
+            resp = requests.get(f"{CID_CONTACT_URL}/providers/{miner_info['PeerId']}", timeout=PROBE_TIMEOUT_SECONDS)
+            if resp.ok:
+                addrs = re.findall(r'"(/[^"]+)"', resp.text)
+
+        # best effort, fall back to on-chain multiaddrs
+        except requests.RequestException as e:
+            logger.warning("cid.contact lookup for %s failed: %s", provider_id, e)
+
+    bases = [base for base in (http_base_from_multiaddr(addr) for addr in addrs) if base]
+
+    if not bases:
+        decoded = (multiaddr_to_string(base64.b64decode(addr)) for addr in miner_info.get("Multiaddrs") or [])
+        bases = [base for base in (http_base_from_multiaddr(addr) for addr in decoded if addr) if base]
+
+    return list(dict.fromkeys(bases))
+
+
+def _parse_payment_challenge(www_authenticate: str) -> dict:
+    match = re.search(r'request="([^"]+)"', www_authenticate)
+
+    if not www_authenticate.startswith("Payment") or not match:
+        raise ValueError(f"not an MPP Payment challenge: {www_authenticate!r}")
+
+    encoded = match.group(1)
+    return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+
+
+def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
+    url = f"{base_url}/piece/{piece_cid}"
+
+    try:
+        commands_utils.validate_and_parse_url(url)  # SSRF guard: endpoints are advertised by SPs
+    except (click.ClickException, OSError) as e:
+        return PieceProbe(status="unavailable", detail=str(e))
+
+    try:
+        head = requests.head(url, timeout=PROBE_TIMEOUT_SECONDS, allow_redirects=False)
+        size = int(head.headers.get("Content-Length", 0)) if head.status_code == 200 else None
+
+        # a 1-byte range keeps a free server from streaming the whole piece; LPR sp-proxy answers 402 regardless
+        with requests.get(url, headers={"Range": "bytes=0-0"}, timeout=PROBE_TIMEOUT_SECONDS, stream=True, allow_redirects=False) as resp:
+            if resp.status_code in (200, 206):
+                if size is None and "/" in resp.headers.get("Content-Range", ""):
+                    size = int(resp.headers["Content-Range"].rsplit("/", 1)[1])
+                return PieceProbe(status="free", size_bytes=size)
+
+            if resp.status_code == 402:
+                challenge = _parse_payment_challenge(resp.headers.get("WWW-Authenticate", ""))
+                return PieceProbe(status="paid", size_bytes=size, price=Decimal(challenge["price_usdfc"]), payee=challenge.get("payee_0x"))
+
+            if resp.status_code == 403:
+                return PieceProbe(status="private", detail="403 Forbidden")
+
+            return PieceProbe(status="unavailable", detail=f"HTTP {resp.status_code}")
+
+    except (requests.RequestException, ValueError, KeyError) as e:
+        return PieceProbe(status="unavailable", detail=str(e))
+
+
+def _sample_pieces(pieces: list[dict]) -> list[dict]:
+    return pieces[:PROBE_SAMPLE_PIECES]
+
+
+# probes sample pieces at base_url; returns the source with its price per GiB, or None with a reason
+def probe_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | None, str]:
+    prices_per_gib = set()
+
+    for piece in _sample_pieces(pieces):
+        probe = probe_piece(base_url, piece["pieceCid"])
+
+        if probe.status in ("private", "unavailable"):
+            return None, f"piece {piece['pieceCid']}: {probe.status} ({probe.detail})"
+
+        if probe.size_bytes is not None and probe.size_bytes != piece["fileSize"]:
+            return None, f"piece {piece['pieceCid']}: size {probe.size_bytes} != manifest fileSize {piece['fileSize']}"
+
+        if probe.status == "paid":
+            if not probe.size_bytes:
+                return None, f"piece {piece['pieceCid']}: paid but size unknown"
+
+            # LPR sp-proxy price = price per GiB * GiB rounded up
+            prices_per_gib.add(probe.price / ceil(probe.size_bytes / GIB_BYTES))
+        else:
+            prices_per_gib.add(Decimal(0))
+
+    if len(prices_per_gib) > 1:
+        click.echo(f"WARNING: {base_url} quoted inconsistent prices per GiB {sorted(prices_per_gib)}; using the highest")
+
+    return RetrievalSource(base_url=base_url, price_per_gib=max(prices_per_gib)), "ok"
+
+
+def find_healthy_source(manifest_hash: bytes,
+                        pieces: list[dict],
+                        exclude_provider_ids: set[ActorId],
+                        source_url: str | None = None) -> RetrievalSource:
+    #
+    if source_url:
+        source, reason = probe_source(source_url.rstrip("/"), pieces)
+        if not source:
+            raise click.ClickException(f"Source {source_url} is not serving the dataset: {reason}")
+
+        click.echo(f"Using source {source_url}: {_price_str(source)}")
+        return source
+
+    click.echo("\nLooking for a healthy SP still serving this dataset (same manifest, other providers)...")
+    candidates = []
+
+    for deal in commands_utils.get_all_deals(PoRepMarketDealState.ACTIVE):
+        if deal.provider_id in exclude_provider_ids or deal.provider_id in (c.deal.provider_id for c in candidates):
+            continue
+
+        view = PoRepMarketViewHelper().get_deal_view(deal.deal_id)
+
+        if bytes(view.data.manifest_hash) == bytes(manifest_hash):
+            candidates.append(view)
+
+    sources = []
+
+    for view in candidates:
+        label = f"  deal {view.deal.deal_id} provider {view.deal.provider_id}"
+
+        if view.deal.deal_type != PoRepMarketDealType.PUBLIC:
+            click.echo(f"{label}: skipped, {view.deal.deal_type} deal (LPR only serves private deals to their owner)")
+            continue
+
+        if not commands_utils.get_deal_claim_ids(view.deal):
+            click.echo(f"{label}: skipped, no claims on-chain")
+            continue
+
+        try:
+            bases = discover_provider_http_bases(view.deal.provider_id)
+        except RuntimeError as e:
+            click.echo(f"{label}: skipped, {e}")
+            continue
+
+        if not bases:
+            click.echo(f"{label}: skipped, no advertised HTTP endpoint")
+            continue
+
+        for base_url in bases:
+            source, reason = probe_source(base_url, pieces)
+
+            if source:
+                source.deal_id, source.provider_id = view.deal.deal_id, view.deal.provider_id
+                click.echo(f"{label} at {base_url}: healthy, {_price_str(source)}")
+                sources.append(source)
+                break
+
+            click.echo(f"{label} at {base_url}: not serving, {reason}")
+
+    if not sources:
+        raise click.ClickException("No healthy SP found serving this dataset; pass a source URL explicitly if you know one")
+
+    # same preference as LPR retrieval-client: free first, then cheapest
+    return min(sources, key=lambda s: s.price_per_gib)
+
+
+def _price_str(source: RetrievalSource) -> str:
+    return "free" if source.is_free() else f"{source.price_per_gib} tokens/GiB"

@@ -10,9 +10,8 @@ readonly CLAIM_ALLOCATIONS_SOFTWARE="curio"
 readonly ONBOARD_DATA_DOWNLOADER="aria2"
 # readonly ONBOARD_DATA_DOWNLOADER="lpr"
 
-# Port of the piece server at the manifest URL host: 7777 for aria2 by default, the sp-proxy port (e.g. 8787) for lpr.
+# Port of the piece server at the manifest URL host for aria2. Not used by lpr, which finds a healthy SP by itself.
 readonly ONBOARD_DATA_PORT="7777"
-# readonly ONBOARD_DATA_PORT="8787"
 
 # With lpr: file with the private key of the SP payee address (the client funds its FileCoinPay account
 # with `client pay-repair-retrieval`). Leave empty to use SP_PAYEE_KEY_FILE or the FILPAY_PRIVATE_KEY env var.

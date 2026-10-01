@@ -7,12 +7,13 @@ import click
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
+from cli.commands.repair_utils import GIB_BYTES, RetrievalSource, find_healthy_source
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
-from cli.services.contracts.porep_market import PoRepMarketDealState
+from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
 from cli.services.contracts.sp_registry import SPRegistry
-from cli.services.web3_service import ActorId, EthAddress, Web3Service
+from cli.services.web3_service import EthAddress, Web3Service
 
 # FCSS repair flow: a new SP re-onboards a dataset by retrieving it from the surviving ("healthy") SP's
 # large-paid-retrievals sp-proxy (https://github.com/fidlabs/large-paid-retrievals).
@@ -23,19 +24,19 @@ from cli.services.web3_service import ActorId, EthAddress, Web3Service
 # the payee is the SP wallet already recorded on-chain for the deal, and the LPR retrieval-client (run by the new SP
 # with the payee key) spends available FileCoinPay funds before touching the wallet. So the new SP never fronts the
 # retrieval cost, the client's exposure is capped at the deposited amount, and no keys or addresses are exchanged.
+# The healthy SP and its price are found automatically (see repair_utils.find_healthy_source).
 
-GIB_BYTES = 2 ** 30
 LOGS_BLOCK_RANGE = 2000  # initial eth_getLogs block range, shrunk to the RPC provider limit if needed
 MIN_LOGS_BLOCK_RANGE = 50
 
 
 # Mirrors large-paid-retrievals sp-proxy pricing (README "Pricing"): each piece is billed per binary GiB, rounded up.
-# This is an upfront estimate from the manifest fileSize; the sp-proxy quotes from upstream HEAD Content-Length.
+# The price per GiB is read from the healthy SP's quotes; sizes come from the manifest fileSize (checked against the SP).
 def estimate_retrieval_cost(pieces: list[dict], price_per_gib_wei: int) -> int:
     return sum(ceil((piece.get("fileSize") or piece["pieceSize"]) / GIB_BYTES) * price_per_gib_wei for piece in pieces)
 
 
-def price_to_wei(price: float, decimals: int) -> int:
+def price_to_wei(price: float | Decimal, decimals: int) -> int:
     result = Decimal(str(price)) * (10 ** decimals)
 
     if result != int(result):
@@ -102,11 +103,31 @@ def get_previous_repair_deposits(token: EthAddress, payee: EthAddress, since_blo
     return total
 
 
+def find_repair_source(deal: PoRepMarketDealView,
+                       pieces: list[dict],
+                       repair_of_deal_id: int | None = None,
+                       source_url: str | None = None) -> RetrievalSource:
+    #
+    exclude = {deal.deal.provider_id}
+
+    if repair_of_deal_id is not None:
+        exclude.add(PoRepMarketViewHelper().get_deal_view(repair_of_deal_id).deal.provider_id)
+
+    return find_healthy_source(deal.data.manifest_hash, pieces, exclude, source_url)
+
+
+def ensure_repairable(deal: PoRepMarketDealView):
+    if deal.deal.deal_type != PoRepMarketDealType.PUBLIC:
+        raise click.ClickException(f"Deal ID {deal.deal.deal_id} is {deal.deal.deal_type}; large-paid-retrievals only serves private deals "
+                                   f"to their owner, so the new SP could not retrieve the data. Only PUBLIC deals can be repaired.")
+
+
 def pay_repair_retrieval(deal_id: int,
-                         price_per_gib: float,
                          repair_of_deal_id: int | None = None,
-                         provider_id: str | None = None,
-                         token_address: str | None = None):
+                         source_url: str | None = None,
+                         price_per_gib: float | None = None,
+                         token_address: str | None = None,
+                         source: RetrievalSource | None = None):
     #
     Web3Service().wait_for_pending_transactions(client_address())
 
@@ -119,12 +140,25 @@ def pay_repair_retrieval(deal_id: int,
     if deal.deal.state not in (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
         raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected PROPOSED, ACCEPTED or ACTIVE")
 
-    if provider_id is not None and deal.deal.provider_id != ActorId(provider_id):
-        raise click.ClickException(f"Deal ID {deal_id} is assigned to provider {deal.deal.provider_id}, not the expected {provider_id}; "
-                                   f"refusing to pay the repair retrieval for a different SP.")
+    ensure_repairable(deal)
 
     if repair_of_deal_id is not None:
         ensure_same_dataset(deal, repair_of_deal_id)
+
+    manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
+    pieces = manifest[0]["pieces"]
+
+    # a source found before proposing is only reusable if the deal did not land with that same SP
+    if price_per_gib is None and (source is None or source.provider_id == deal.deal.provider_id):
+        source = find_repair_source(deal, pieces, repair_of_deal_id, source_url)
+
+    if price_per_gib is None:
+        assert source
+        if source.is_free():
+            click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")
+            return
+
+        price_per_gib = source.price_per_gib
 
     retrieval_wallet = get_retrieval_wallet(deal)
 
@@ -136,6 +170,8 @@ def pay_repair_retrieval(deal_id: int,
     token_symbol = token.symbol()
 
     cost = estimate_retrieval_cost(pieces, price_to_wei(price_per_gib, token_decimals))
+    source_str = f" from {source.base_url}" + (f" (deal {source.deal_id}, provider {source.provider_id})" if source.deal_id else "") if source else ""
+
     cost_str = utils.str_from_wei(cost, token_decimals)
 
     token_balance = token.balance_of(client_address())
@@ -143,7 +179,7 @@ def pay_repair_retrieval(deal_id: int,
 
     click.echo(f"\nRepair retrieval for deal ID {deal_id} (provider {deal.deal.provider_id}):\n"
                f"  Manifest: {deal.data.manifest_location}\n"
-               f"  Pieces: {len(pieces)}, billed per GiB rounded up per piece at {price_per_gib} {token_symbol}/GiB\n"
+               f"  Pieces: {len(pieces)}, billed per GiB rounded up per piece at {price_per_gib} {token_symbol}/GiB{source_str}\n"
                f"  Estimated retrieval cost: {cost_str} {token_symbol}\n"
                f"  New SP retrieval wallet (deal payee): {retrieval_wallet}\n"
                f"  Client token balance: {token_balance_str} {token_symbol}")
