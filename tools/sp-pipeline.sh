@@ -14,9 +14,9 @@ readonly ONBOARD_DATA_DOWNLOADER="aria2"
 readonly ONBOARD_DATA_PORT="7777"
 # readonly ONBOARD_DATA_PORT="8787"
 
-# With lpr: file with the retrieval wallet private key funded by the client's `client pay-repair-retrieval`.
-# Leave empty to use SP_RETRIEVAL_KEY_FILE or retrieval-client's FILPAY_PRIVATE_KEY env var.
-readonly RETRIEVAL_KEY_FILE=""
+# With lpr: file with the private key of the SP payee address (the client funds its FileCoinPay account
+# with `client pay-repair-retrieval`). Leave empty to use SP_PAYEE_KEY_FILE or the FILPAY_PRIVATE_KEY env var.
+readonly PAYEE_KEY_FILE=""
 
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +25,8 @@ readonly CLI_PATH="${SCRIPT_DIR}/../porep_tooling_cli.py"
 set -euo pipefail
 
 onboard_data_args=(--output-dir "${ONBOARD_DATA_OUTPUT_DIR}" --downloader "${ONBOARD_DATA_DOWNLOADER}" --port "${ONBOARD_DATA_PORT}")
-if [[ -n "${RETRIEVAL_KEY_FILE}" ]]; then
-    onboard_data_args+=(--retrieval-key-file "${RETRIEVAL_KEY_FILE}")
+if [[ -n "${PAYEE_KEY_FILE}" ]]; then
+    onboard_data_args+=(--payee-key-file "${PAYEE_KEY_FILE}")
 fi
 
 mapfile -t completed_deals < <(python3 "${CLI_PATH}" sp get-deals --provider-id "$PROVIDER_ID" completed | jq -r '.[].deal_id')

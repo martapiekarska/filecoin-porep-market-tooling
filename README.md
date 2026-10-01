@@ -207,23 +207,27 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 FCSS requires two SP copies of every dataset. When one SP exits, the client repairs the dataset by having a **new SP**
 fetch the data from the **healthy SP** (the one holding the surviving copy) through a paid retrieval with
 [large-paid-retrievals](https://github.com/fidlabs/large-paid-retrievals) (LPR), and onboard it under a new deal.
-The client pays for that one-off retrieval up front, so the new SP never fronts the cost and no client keys are shared.
+The client pays for that one-off retrieval up front, so the new SP never fronts the cost. No keys are shared and the
+client and the new SP don't need to exchange anything outside the CLI and the chain.
 
 **How the retrieval payment works:** the LPR `sp-proxy` only accepts a Filecoin Pay one-time rail payment whose payer is
 the wallet that signs the retrieval request, i.e. the wallet that downloads. So the client cannot pay the healthy SP
 on the new SP's behalf. Instead, `client pay-repair-retrieval` (or `client propose-deal --repair`) makes a one-off
-FileCoinPay `deposit` of the estimated retrieval cost **into the FileCoinPay account of the new SP's retrieval wallet**.
-LPR `retrieval-client` spends available FileCoinPay funds before using any wallet balance, so the new SP's download is
-paid by the client. The client's exposure is capped at the deposited amount; the deposit is separate from and in
-addition to the regular deal payment rail (`client init-deal`).
+FileCoinPay `deposit` of the estimated retrieval cost **into the FileCoinPay account of the new deal's SP payee**. That
+is the payee address the SP registered with `sp register-sp --payee-address`, recorded on-chain in the deal, so the
+CLI finds it itself. The new SP runs LPR `retrieval-client` with the payee key, and it spends available FileCoinPay
+funds before using any wallet balance, so the new SP's download is paid by the client. The client's exposure is capped
+at the deposited amount; the deposit is separate from and in addition to the regular deal payment rail
+(`client init-deal`).
 
 1. **Healthy SP:** deploy LPR `sp-proxy` in front of its piece server with a flat `--price-usdfc-per-gb` rate, following
    [LPR for storage providers](https://github.com/fidlabs/large-paid-retrievals#for-storage-providers).
 
 2. **New SP:** build LPR `retrieval-client`
-   ([for dataset consumers](https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers)), put it in `PATH`
-   or set `RETRIEVAL_CLIENT_PATH`, and create a dedicated retrieval wallet key (e.g. `openssl rand -hex 32 > retrieval.key`).
-   Send the client only its public `0x` address. The wallet needs a little FIL for Filecoin Pay gas.
+   ([for dataset consumers](https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers)) and put it in
+   `PATH` or set `RETRIEVAL_CLIENT_PATH`. Have the private key of your registered payee address (`sp get-sps`) available
+   as a file on the downloading host. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
+   Filecoin Pay gas.
 
    ```bash
    git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals
@@ -240,40 +244,42 @@ addition to the regular deal payment rail (`client init-deal`).
    Host the written file at the printed `repair_manifest_url`.
 
 4. **Client:** propose the new deal with `--repair`. This checks the manifest matches the repaired deal before
-   proposing, then deposits the retrieval cost for the new SP once the deal is created. The deposit only goes ahead if
-   the deal is assigned to `--repair-provider-id`. To guarantee the provider, an admin can use
-   `admin propose-deal-for-offer` with the new SP's offer, and the client then runs `client pay-repair-retrieval`.
+   proposing, then deposits the retrieval cost into the payee account of the SP the deal was assigned to. Optionally,
+   `--repair-provider-id` makes the deposit go ahead only if the deal landed with that SP. To guarantee the provider,
+   an admin can use `admin propose-deal-for-offer` with the new SP's offer, and the client then runs
+   `client pay-repair-retrieval`.
 
    ```bash
    python3 ./porep_tooling_cli.py client propose-deal <repair-manifest-url> ... \
      --repair \
      --repair-of <repaired-deal-id> \
-     --repair-provider-id <new-sp-provider-id> \
-     --repair-retrieval-wallet <new-sp-retrieval-wallet-0x> \
      --repair-price-per-gib <healthy-sp-price-usdfc-per-gb>
    ```
 
    The cost is estimated like the `sp-proxy` prices it: `ceil(fileSize / GiB) × price` per piece. Continue with
    `client init-deal` and `client make-allocations` as usual. `client pay-repair-retrieval <new-deal-id> ...` runs the
-   deposit step on its own, e.g. to retry it.
+   deposit step on its own, e.g. to retry it. It warns if the client already deposited to that payee since the deal
+   was proposed. This check is best effort: some RPC providers only serve the last 24h of logs.
 
 5. **New SP:** onboard the data through LPR instead of aria2. Use `--port` for the healthy SP's `sp-proxy` port:
 
    ```bash
    python3 ./porep_tooling_cli.py sp onboard-data <new-deal-id> --output-dir <dir> \
-     --downloader lpr --port 8787 --retrieval-key-file ./retrieval.key
+     --downloader lpr --port 8787 --payee-key-file ./payee.key
    ```
 
-   `retrieval-client` gets the CLI's `RPC_URL`, `FILECOIN_PAY` and the deal's payment token, so it spends from the same
-   FileCoinPay account the client funded. In `tools/sp-pipeline.sh`, set `ONBOARD_DATA_DOWNLOADER="lpr"`,
-   `ONBOARD_DATA_PORT` and `RETRIEVAL_KEY_FILE`.
+   The CLI checks that the key belongs to the deal's payee before downloading. `retrieval-client` gets the CLI's
+   `RPC_URL`, `FILECOIN_PAY` and the deal's payment token, so it spends from the same FileCoinPay account the client
+   funded. In `tools/sp-pipeline.sh`, set `ONBOARD_DATA_DOWNLOADER="lpr"`, `ONBOARD_DATA_PORT` and `PAYEE_KEY_FILE`.
 
 Limitations:
 
 - LPR currently lets only the deal owner retrieve **private** deals, so this flow works for **public** deals only. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.
-- The cost is an upfront estimate. If the `sp-proxy` quotes more, for example after a price change, `retrieval-client`
-  covers the difference from the retrieval wallet's own USDFC, or fails if the wallet has none.
+- The payee's FileCoinPay account also collects the SP's deal earnings, and LPR has no spend cap. If the `sp-proxy`
+  quotes more than the estimate, for example after a price change, `retrieval-client` covers the difference from
+  those funds or the payee wallet's USDFC.
+- LPR can't sign through a Lotus wallet, so the payee key must be available as a plain key file on the downloading host.
 
 ## Developing new CLI commands
 

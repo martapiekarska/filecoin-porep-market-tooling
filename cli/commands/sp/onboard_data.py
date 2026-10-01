@@ -14,6 +14,7 @@ from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.self_update import SelfUpdateService
+from cli.services.web3_service import EthAddress
 
 
 def _get_aria2c_path() -> str:
@@ -149,16 +150,37 @@ def _move_lpr_downloads(pieces: list[dict], output_dir: Path) -> list[tuple[dict
     return result
 
 
+# retrieval-client pays from the deal payee's FileCoinPay account, which the client funded with `client pay-repair-retrieval`;
+# fail before spending anything if the key does not belong to that payee
+def _ensure_payee_key(deal, payee_key_file: str | None):
+    if payee_key_file:
+        private_key = Path(payee_key_file).read_text(encoding="utf-8").strip()
+    elif os.getenv("FILPAY_PRIVATE_KEY"):
+        private_key = os.environ["FILPAY_PRIVATE_KEY"].strip()
+    else:
+        raise click.UsageError("--downloader lpr requires the deal payee private key: set --payee-key-file / SP_PAYEE_KEY_FILE or FILPAY_PRIVATE_KEY")
+
+    try:
+        key_address = EthAddress.from_private_key(private_key if private_key.startswith("0x") else f"0x{private_key}")
+    except ValueError as e:
+        raise click.ClickException("Invalid payee private key") from e
+
+    if key_address != deal.payment.payee:
+        raise click.ClickException(f"Payee key address {key_address} does not match deal ID {deal.deal.deal_id} payee {deal.payment.payee}; "
+                                   f"the repair retrieval is funded in the deal payee's FileCoinPay account.")
+
+
 def _download_with_lpr(ctx,
                        deal,
                        pieces: list[dict],
                        download_host: str,
                        output_dir: Path,
                        no_summary: bool,
-                       retrieval_key_file: str | None,
+                       payee_key_file: str | None,
                        claim_allocations: str | None):
     #
     retrieval_client_path = _get_retrieval_client_path()
+    _ensure_payee_key(deal, payee_key_file)
     cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
 
     try:
@@ -178,9 +200,9 @@ def _download_with_lpr(ctx,
             if not any(arg == option or arg.startswith(f"{option}=") for arg in ctx.args):
                 command += [option, value]
 
-        # without --retrieval-key-file, retrieval-client reads its key from the FILPAY_PRIVATE_KEY env var
-        if retrieval_key_file:
-            command += ["--filpay-private-key-file", str(Path(retrieval_key_file).resolve())]
+        # without --payee-key-file, retrieval-client reads its key from the FILPAY_PRIVATE_KEY env var
+        if payee_key_file:
+            command += ["--filpay-private-key-file", str(Path(payee_key_file).resolve())]
 
         command += ctx.args
 
@@ -239,9 +261,9 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--downloader", type=click.Choice(["aria2", "lpr"], case_sensitive=False), default="aria2", show_default=True,
               help="Downloader to use: aria2 for free HTTP piece servers, lpr for paid retrieval from a "
                    "large-paid-retrievals sp-proxy (e.g. FCSS repair from a healthy SP).")
-@click.option("--retrieval-key-file", envvar="SP_RETRIEVAL_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
-              help="With --downloader lpr: file with the retrieval wallet private key passed to retrieval-client.  "
-                   "[default: retrieval-client reads FILPAY_PRIVATE_KEY env var]")
+@click.option("--payee-key-file", envvar="SP_PAYEE_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
+              help="With --downloader lpr: file with the private key of the deal's payee address (`sp register-sp --payee-address`), "
+                   "passed to retrieval-client.  [default: FILPAY_PRIVATE_KEY env var]")
 @click.pass_context
 # TODO LATER add commP files verification after download
 def onboard_data(ctx,
@@ -253,7 +275,7 @@ def onboard_data(ctx,
                  no_summary: bool = False,
                  claim_allocations: str | None = None,
                  downloader: str = "aria2",
-                 retrieval_key_file: str | None = None):
+                 payee_key_file: str | None = None):
     """
     \b
     Download data for a deal using aria2 downloader or large-paid-retrievals retrieval-client.
@@ -264,7 +286,7 @@ def onboard_data(ctx,
 
     \b
     With --downloader lpr the data is fetched (and paid for) from the large-paid-retrievals sp-proxy at
-    --host:--port, using the retrieval wallet's FileCoinPay funds (see `client pay-repair-retrieval`).
+    --host:--port, paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
 
     DEAL_ID - The ID of the deal to download pieces for.
 
@@ -318,7 +340,7 @@ def onboard_data(ctx,
 
     if downloader == "lpr":
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
-                           no_summary, retrieval_key_file, claim_allocations)
+                           no_summary, payee_key_file, claim_allocations)
         return
 
     assert aria2c_path

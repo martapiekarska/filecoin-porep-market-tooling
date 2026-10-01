@@ -44,9 +44,8 @@ from cli.services.web3_service import EthAddress
 @click.option("--repair-of", type=click.IntRange(min=1),
               help="With --repair: deal ID being repaired; MANIFEST_URL must serve the same manifest (see `client repair-manifest`).")
 @click.option("--repair-provider-id",
-              help="With --repair: provider (miner actor) ID of the new SP expected to get the deal.")
-@click.option("--repair-retrieval-wallet",
-              help="With --repair: 0x wallet the new SP uses with large-paid-retrievals retrieval-client.")
+              help="With --repair: optional provider (miner actor) ID of the new SP expected to get the deal; "
+                   "the repair retrieval is not paid if the deal is assigned to another SP.")
 @click.option("--repair-price-per-gib", type=click.FloatRange(min=0, min_open=True),
               help="With --repair: healthy SP's sp-proxy rate in decimal --payment-token tokens per GiB (e.g., 0.01).")
 def propose_deal(manifest_url: str,
@@ -61,7 +60,6 @@ def propose_deal(manifest_url: str,
                  repair: bool = False,
                  repair_of: int | None = None,
                  repair_provider_id: str | None = None,
-                 repair_retrieval_wallet: str | None = None,
                  repair_price_per_gib: float | None = None):
     """
     Interactively propose a deal from MANIFEST_URL with the specified parameters.
@@ -70,21 +68,20 @@ def propose_deal(manifest_url: str,
     1. Fetch and validate manifest from a given MANIFEST_URL,
     2. prepare and confirm deal proposal details,
     3. propose deal on-chain via PoRep Market contract,
-    4. with --repair: deposit the one-off retrieval cost into the new SP's retrieval wallet
-       FileCoinPay account (see `client pay-repair-retrieval`).
+    4. with --repair: deposit the one-off retrieval cost into the FileCoinPay account of the
+       new deal's SP payee (see `client pay-repair-retrieval`).
 
     MANIFEST_URL - URL of the deal manifest file to use.
     """
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    repair_options = {"--repair-of": repair_of,
-                      "--repair-provider-id": repair_provider_id,
-                      "--repair-retrieval-wallet": repair_retrieval_wallet,
-                      "--repair-price-per-gib": repair_price_per_gib}
+    required_repair_options = {"--repair-of": repair_of,
+                               "--repair-price-per-gib": repair_price_per_gib}
+    repair_options = {**required_repair_options, "--repair-provider-id": repair_provider_id}
 
     if repair:
-        missing = [name for name, value in repair_options.items() if value is None]
+        missing = [name for name, value in required_repair_options.items() if value is None]
         if missing:
             raise click.UsageError(f"--repair requires {', '.join(missing)}")
 
@@ -110,9 +107,9 @@ def propose_deal(manifest_url: str,
                                           PoRepMarketDealType.from_web3(deal_type))
 
     if repair:
-        assert repair_provider_id and repair_retrieval_wallet and repair_price_per_gib
-        retry_command = (f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'} --provider-id {repair_provider_id} "
-                         f"--retrieval-wallet {repair_retrieval_wallet} --price-per-gib {repair_price_per_gib} --repair-of {repair_of}`")
+        assert repair_price_per_gib
+        retry_command = (f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'} --price-per-gib {repair_price_per_gib} "
+                         f"--repair-of {repair_of}" + (f" --provider-id {repair_provider_id}" if repair_provider_id else "") + "`")
 
         # e.g. the proposal ran as dry run after declining the final confirmation
         if deal_id is None:
@@ -120,7 +117,7 @@ def propose_deal(manifest_url: str,
             return
 
         click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
-        _repair.pay_repair_retrieval(deal_id, repair_retrieval_wallet, repair_price_per_gib, repair_provider_id, repair_of, payment_token)
+        _repair.pay_repair_retrieval(deal_id, repair_price_per_gib, repair_of, repair_provider_id, payment_token)
 
 
 @click.command(hidden=True)

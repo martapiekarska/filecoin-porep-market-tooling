@@ -180,6 +180,14 @@ class FileCoinPay(ContractService):
             signer
         )
 
+    # @notice Sums DepositRecorded amounts of `token` deposited by `from_address` into the `to_address` account
+    #     within the inclusive block range.
+    def get_deposited_amount(self, token: EthAddress, from_address: EthAddress, to_address: EthAddress, from_block: int, to_block: int) -> int:
+        # filter only by token on-chain: some RPC providers hang on eth_getLogs with all indexed topics set
+        logs = self.contract.events.DepositRecorded().get_logs(from_block=from_block, to_block=to_block, argument_filters={"token": token})
+        return sum(int(log.args.amount) for log in logs
+                   if EthAddress(log.args["from"]) == from_address and EthAddress(log.args["to"]) == to_address)
+
     # token => client => operator => Approval
     def get_operator_approval(self, token: EthAddress, client: EthAddress, operator: EthAddress) -> FileCoinPayOperatorApproval:
         return FileCoinPayOperatorApproval.from_web3(self.call_contract(self.contract.functions.operatorApprovals(token, client, operator)))
