@@ -216,7 +216,9 @@ def pay_repair_retrieval(deal_id: int,
         source = find_repair_source(deal, pieces, repair_of_deal_id, source_url)
 
     if price_per_gib is None:
-        assert source
+        if source is None:
+            raise RuntimeError("No retrieval source resolved")
+
         if source.is_free():
             click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")
             return
@@ -224,9 +226,6 @@ def pay_repair_retrieval(deal_id: int,
         price_per_gib = source.price_per_gib
 
     retrieval_wallet = get_retrieval_wallet(deal)
-
-    manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
-    pieces = manifest[0]["pieces"]
 
     token = ERC20Contract(EthAddress.from_any(token_address) if token_address else deal.payment.payment_token)
     token_decimals = token.decimals()

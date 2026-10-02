@@ -363,7 +363,9 @@ def onboard_data(ctx,
                            no_summary, payee_key_file, claim_allocations)
         return
 
-    assert aria2c_path
+    if not aria2c_path:
+        raise RuntimeError("aria2c path not resolved")
+
     aria2_file = _write_aria2c_input_file(pieces_to_download if not force else pieces, download_host, _output_dir, no_summary)
 
     try:
