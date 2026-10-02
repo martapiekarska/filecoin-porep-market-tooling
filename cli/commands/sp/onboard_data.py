@@ -10,7 +10,7 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.repair_utils import find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import ensure_secret_file, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -155,8 +155,12 @@ def _move_lpr_downloads(pieces: list[dict], output_dir: Path) -> list[tuple[dict
 # fail before spending anything if the key does not belong to that payee
 def _ensure_payee_key(deal, payee_key_file: str | None):
     if payee_key_file:
+        # the payee also receives the SP's deal revenue, so treat its key like an SSH private key
+        ensure_secret_file(Path(payee_key_file), "payee key file")
         private_key = Path(payee_key_file).read_text(encoding="utf-8").strip()
     elif os.getenv("FILPAY_PRIVATE_KEY"):
+        click.echo("WARNING: FILPAY_PRIVATE_KEY exposes the payee key, which also receives your deal revenue, to every process "
+                   "started from this environment; prefer --payee-key-file with a chmod 600 file.")
         private_key = os.environ["FILPAY_PRIVATE_KEY"].strip()
     else:
         raise click.UsageError("--downloader lpr requires the deal payee private key: set --payee-key-file / SP_PAYEE_KEY_FILE or FILPAY_PRIVATE_KEY")

@@ -2,6 +2,7 @@ import base64
 import ipaddress
 import json
 import logging
+import os
 import re
 from decimal import Decimal
 from math import ceil
@@ -37,6 +38,30 @@ _MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("d
 
 # /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
 _HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
+
+
+# Like SSH does for private key files: a file holding a secret must be owned by the current user and not be accessible
+# by group or others. No-op where POSIX permissions don't apply (Windows).
+def secret_file_problem(path: Path) -> str | None:
+    if os.name != "posix":
+        return None
+
+    stat = path.stat()
+
+    if stat.st_uid != os.getuid():
+        return f"{path} is owned by another user (uid {stat.st_uid})"
+
+    if stat.st_mode & 0o077:
+        return f"{path} is accessible by other users (mode {oct(stat.st_mode & 0o777)}); run: chmod 600 {path}"
+
+    return None
+
+
+def ensure_secret_file(path: Path, description: str):
+    problem = secret_file_problem(path)
+
+    if problem:
+        raise click.ClickException(f"Refusing to use {description}: {problem}")
 
 
 @utils.json_dataclass()

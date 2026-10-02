@@ -322,6 +322,11 @@ Limitations:
   quotes more than the estimate, for example after a price change, `retrieval-client` covers the difference from
   those funds or the payee wallet's USDFC.
 - LPR can't sign through a Lotus wallet, so the payee key must be available as a plain key file on the downloading host.
+  The payee is also the account that receives your deal revenue, so this puts a high-value key on a machine that
+  downloads third-party data: keep the file `chmod 600` and owned by the user running the CLI (`onboard-data` refuses it
+  otherwise), prefer `--payee-key-file` over the `FILPAY_PRIVATE_KEY` variable, and withdraw revenue from the payee's
+  FileCoinPay account regularly. A separate low-balance retrieval wallet or an external signer would remove this
+  exposure but needs support in LPR and the registry.
 
 ## Developing new CLI commands
 
