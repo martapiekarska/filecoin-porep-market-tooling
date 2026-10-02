@@ -104,7 +104,8 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
 
     EPOCHS_IN_MONTH = PoRepMarket().get_epochs_in_month()
     EPOCHS_IN_DAY = EPOCHS_IN_MONTH // 30  # PoRep Market smart contracts assumes month == 30 days
-    assert EPOCHS_IN_DAY * 30 == EPOCHS_IN_MONTH
+    if EPOCHS_IN_DAY * 30 != EPOCHS_IN_MONTH:
+        raise RuntimeError(f"Contract EPOCHS_IN_MONTH {EPOCHS_IN_MONTH} is not 30 days of whole epochs")
 
     term_min = deal.terms.duration_epochs
     term_max = term_min + 40 * EPOCHS_IN_DAY  # + 40 days

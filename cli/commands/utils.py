@@ -62,7 +62,8 @@ def get_sp_deals(state: PoRepMarketDealState | None = None,
                  provider_id: ActorId | None = None) -> list[PoRepMarketDeal]:
     #
     if provider_id:
-        assert not organization_address
+        if organization_address:
+            raise ValueError("Pass either provider_id or organization_address, not both")
 
         try:
             provider_info = SPRegistry().get_provider_view(provider_id)
@@ -71,7 +72,9 @@ def get_sp_deals(state: PoRepMarketDealState | None = None,
 
         organization_address = provider_info.organization_address
 
-    assert organization_address
+    if not organization_address:
+        raise ValueError("provider_id or organization_address is required")
+
     result = get_all_deals(state, organization_address)
 
     if provider_id:
@@ -504,7 +507,8 @@ def register_or_update_sps(providers: list[SPRegistryProviderInput], signer: TxS
             current_different_params = {k: getattr(registered_info, k) for k in provider_info.__dict__ if
                                         getattr(registered_info, k) != getattr(provider_info, k)}
             new_different_params = {k: v for k, v in provider_info.__dict__.items() if getattr(registered_info, k) != v}
-            assert current_different_params.keys() == new_different_params.keys()
+            if current_different_params.keys() != new_different_params.keys():
+                raise RuntimeError(f"Inconsistent provider parameter diff: {current_different_params.keys()} != {new_different_params.keys()}")
 
             if not current_different_params:
                 click.echo(f"Storage Provider {provider_info.provider_id} already registered with same parameters")

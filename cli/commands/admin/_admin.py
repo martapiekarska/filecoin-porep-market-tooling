@@ -60,7 +60,8 @@ def admin_signer() -> TxSigner:
 
     else:
         ADMIN_PRIVATE_KEY = click.prompt("Admin private key", hide_input=True)
-        assert ADMIN_PRIVATE_KEY
+        if not ADMIN_PRIVATE_KEY:
+            raise click.ClickException("Admin private key is required")
         return PrivateKeyTxSigner(HexStr(ADMIN_PRIVATE_KEY))
 
 

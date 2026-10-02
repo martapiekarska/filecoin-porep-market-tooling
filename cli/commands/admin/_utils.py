@@ -30,7 +30,8 @@ def get_db_offers(db_url: str,
 
     EPOCHS_IN_MONTH = PoRepMarket().get_epochs_in_month()
     EPOCHS_IN_DAY = EPOCHS_IN_MONTH // 30  # PoRep Market smart contracts assumes month == 30 days
-    assert EPOCHS_IN_DAY * 30 == EPOCHS_IN_MONTH
+    if EPOCHS_IN_DAY * 30 != EPOCHS_IN_MONTH:
+        raise RuntimeError(f"Contract EPOCHS_IN_MONTH {EPOCHS_IN_MONTH} is not 30 days of whole epochs")
 
     def months_to_days(months: int) -> int:
         # PoRep Market smart contracts assumes month == 30 days

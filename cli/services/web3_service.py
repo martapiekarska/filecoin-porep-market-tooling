@@ -335,7 +335,6 @@ class Web3Service:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
 
-        assert cls._instance
         return cls._instance
 
     def __init__(self):
@@ -484,7 +483,9 @@ class Web3Service:
             if block_identifier == "latest":
                 return latest_nonce
 
-            assert block_identifier == "pending", f"Unsupported block identifier: {block_identifier}"
+            if block_identifier != "pending":
+                raise ValueError(f"Unsupported block identifier: {block_identifier}")
+
             pending_nonce = self.get_transaction_count(from_address, "pending")
 
             while pending_nonce > latest_nonce:

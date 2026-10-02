@@ -13,14 +13,15 @@ from cli.services.web3_service import Web3Service
 
 
 def _terminate_active_deal(deal: PoRepMarketDeal) -> str:
-    assert deal.state == PoRepMarketDealState.ACTIVE
-    assert deal.rail_id
+    if deal.state != PoRepMarketDealState.ACTIVE or not deal.rail_id:
+        raise click.ClickException(f"Deal ID {deal.deal_id} is {deal.state} with rail ID {deal.rail_id}, expected ACTIVE with a rail")
 
     return PoRepMarket().terminate_deal(deal.deal_id, PoRepMarketDealState.EARLY_TERMINATED, admin_signer()).tx_hash
 
 
 def _terminate_accepted_deal(deal: PoRepMarketDeal) -> str:
-    assert deal.state == PoRepMarketDealState.ACCEPTED
+    if deal.state != PoRepMarketDealState.ACCEPTED:
+        raise click.ClickException(f"Deal ID {deal.deal_id} is {deal.state}, expected ACCEPTED")
 
     if deal.rail_id == 0:
         return PoRepMarket().reject_accepted_deal(deal.deal_id, admin_signer()).tx_hash

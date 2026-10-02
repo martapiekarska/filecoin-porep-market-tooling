@@ -23,7 +23,8 @@ def set_offer_active(offer_id: int, active: str):
     Web3Service().wait_for_pending_transactions(admin_address())
 
     _active = utils.string_to_bool(active)
-    assert _active is not None
+    if _active is None:
+        raise click.BadParameter(f"Expected true or false, got {active!r}", param_hint="ACTIVE")
 
     offer = SPRegistry().get_offer_view(offer_id)
 

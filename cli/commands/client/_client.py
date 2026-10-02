@@ -66,7 +66,9 @@ def client_address() -> EthAddress:
             click.echo(f"Set client address to {CLIENT_ETH_ADDRESS} to avoid this prompt next time.")
             click.echo("\n")
 
-    assert CLIENT_ETH_ADDRESS
+    if not CLIENT_ETH_ADDRESS:
+        raise RuntimeError("Client address not resolved")
+
     return CLIENT_ETH_ADDRESS
 
 
@@ -85,7 +87,8 @@ def client_signer() -> TxSigner:
 
     else:
         CLIENT_PRIVATE_KEY = click.prompt("Client private key", hide_input=True)
-        assert CLIENT_PRIVATE_KEY
+        if not CLIENT_PRIVATE_KEY:
+            raise click.ClickException("Client private key is required")
         return PrivateKeyTxSigner(HexStr(CLIENT_PRIVATE_KEY))
 
 

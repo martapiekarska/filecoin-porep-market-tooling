@@ -61,7 +61,9 @@ def sp_organization_address() -> EthAddress:
             click.echo(f"Set SP organization to {SP_ORGANIZATION_ETH_ADDRESS} to avoid this prompt next time")
             click.echo("\n")
 
-    assert SP_ORGANIZATION_ETH_ADDRESS
+    if not SP_ORGANIZATION_ETH_ADDRESS:
+        raise RuntimeError("SP organization address not resolved")
+
     return SP_ORGANIZATION_ETH_ADDRESS
 
 
@@ -87,7 +89,8 @@ def sp_signer() -> TxSigner:
 
     else:
         SP_PRIVATE_KEY = click.prompt("SP private key", hide_input=True)
-        assert SP_PRIVATE_KEY
+        if not SP_PRIVATE_KEY:
+            raise click.ClickException("SP private key is required")
         return PrivateKeyTxSigner(HexStr(SP_PRIVATE_KEY))
 
 

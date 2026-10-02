@@ -137,7 +137,7 @@ def confirm(text: str,
     elif answer in yes_answers:
         return True
     else:
-        assert False  # should not happen
+        raise RuntimeError(f"Unexpected confirmation answer {answer!r}")
 
 
 # if answer is set, print the prompt and return the answer immediately without asking the user
@@ -186,7 +186,7 @@ def confirm_str(text: str,
         else:
             continue
 
-    assert False  # should not happen
+    raise RuntimeError("Unreachable: confirmation prompt loop exited")
 
 
 # equivalent to "press enter to continue"

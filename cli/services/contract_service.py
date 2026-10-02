@@ -293,7 +293,7 @@ class ContractService:
         # pylint: disable=broad-exception-caught
         except Exception as e:
             self._handle_contract_error(e, transaction, tx_params)
-            assert False  # unreachable
+            raise RuntimeError("Unreachable: contract error handler returned") from e
 
     def call_contract(self, call) -> T:
         # noinspection PyBroadException
@@ -303,7 +303,7 @@ class ContractService:
         # pylint: disable=broad-exception-caught
         except Exception as e:
             self._handle_contract_error(e, call, None)
-            assert False  # unreachable
+            raise RuntimeError("Unreachable: contract error handler returned") from e
 
     def call_contract_paginated(self, func, offset: int | None, limit: int | None, *args) -> T:
         if offset is not None and limit is not None:
