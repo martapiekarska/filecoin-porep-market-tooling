@@ -98,7 +98,7 @@ def _info():
         _client_address = None
         click.echo(f"Error getting client address: {e}")
 
-    click.echo(f"Client wallet private key: {utils.private_str_to_log_str(CLIENT_PRIVATE_KEY)}")
+    click.echo(f"Client wallet private key: {'set' if CLIENT_PRIVATE_KEY else 'not set'}")  # never print any part of a key
     commands_utils.print_info(_client_address, "Client")
 
 
@@ -132,4 +132,4 @@ def validate_address_matches_private_key(address: EthAddress, private_key: Priva
     derived_address = EthAddress.from_private_key(private_key)
 
     if derived_address != address:
-        raise click.ClickException(f"Address {address} does not match private key {utils.private_str_to_log_str(private_key)} (expected: {derived_address})")
+        raise click.ClickException(f"Address {address} does not match the configured private key (its address is {derived_address})")

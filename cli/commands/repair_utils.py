@@ -54,30 +54,6 @@ def child_env(keep: tuple[str, ...] = (), **extra: str) -> dict[str, str]:
     return env
 
 
-# Like SSH does for private key files: a file holding a secret must be owned by the current user and not be accessible
-# by group or others. No-op where POSIX permissions don't apply (Windows).
-def secret_file_problem(path: Path) -> str | None:
-    if os.name != "posix":
-        return None
-
-    stat = path.stat()
-
-    if stat.st_uid != os.getuid():
-        return f"{path} is owned by another user (uid {stat.st_uid})"
-
-    if stat.st_mode & 0o077:
-        return f"{path} is accessible by other users (mode {oct(stat.st_mode & 0o777)}); run: chmod 600 {path}"
-
-    return None
-
-
-def ensure_secret_file(path: Path, description: str):
-    problem = secret_file_problem(path)
-
-    if problem:
-        raise click.ClickException(f"Refusing to use {description}: {problem}")
-
-
 def get_retrieval_client_path() -> str:
     retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
 

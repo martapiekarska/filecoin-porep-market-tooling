@@ -2,15 +2,18 @@ import dataclasses
 import enum
 import json
 import os
+import re
 import sys
 from collections.abc import Callable
 from decimal import Decimal, InvalidOperation, localcontext
+from pathlib import Path
 from typing import TypeVar
 
 import click
-from dotenv import load_dotenv
+from dotenv import dotenv_values, find_dotenv, load_dotenv
 
-load_dotenv(dotenv_path=None)
+DOTENV_PATH = find_dotenv()  # same lookup load_dotenv() does without a path
+load_dotenv(dotenv_path=DOTENV_PATH or None)
 
 MAX_UINT256 = 2 ** 256 - 1
 DATACAP_DECIMALS = 18
@@ -40,6 +43,45 @@ def get_env(name, required=False, default: T | None = None, required_type: Calla
 
     # noinspection PyTypeChecker
     return required_type(value)
+
+
+# Like SSH does for private key files: a file holding a secret must be owned by the current user and not be accessible
+# by group or others. No-op where POSIX permissions don't apply (Windows).
+def secret_file_problem(path: Path) -> str | None:
+    if os.name != "posix":
+        return None
+
+    stat = path.stat()
+
+    if stat.st_uid != os.getuid():
+        return f"{path} is owned by another user (uid {stat.st_uid})"
+
+    if stat.st_mode & 0o077:
+        return f"{path} is accessible by other users (mode {oct(stat.st_mode & 0o777)}); run: chmod 600 {path}"
+
+    return None
+
+
+def ensure_secret_file(path: Path, description: str):
+    problem = secret_file_problem(path)
+
+    if problem:
+        raise click.ClickException(f"Refusing to use {description}: {problem}")
+
+
+_SECRET_ENV_VAR = re.compile(r"(PRIVATE_KEY|LOTUS_TOKEN|DATABASE_URL)$")
+
+
+# warns (stderr) when the .env file in use holds secrets but other users can read it
+def warn_if_dotenv_exposed():
+    if not DOTENV_PATH:
+        return
+
+    holds_secrets = any(value and _SECRET_ENV_VAR.search(name) for name, value in dotenv_values(DOTENV_PATH).items())
+    problem = secret_file_problem(Path(DOTENV_PATH)) if holds_secrets else None
+
+    if problem:
+        click.echo(f"WARNING: {DOTENV_PATH} holds private keys or tokens but {problem}", err=True)
 
 
 def string_to_bool(value: str | None) -> bool | None:

@@ -73,7 +73,7 @@ def _info():
         _admin_address = None
         click.echo(f"Error getting admin address: {e}")
 
-    click.echo(f"Admin wallet private key: {utils.private_str_to_log_str(ADMIN_PRIVATE_KEY)}")
+    click.echo(f"Admin wallet private key: {'set' if ADMIN_PRIVATE_KEY else 'not set'}")  # never print any part of a key
     commands_utils.print_info(_admin_address, "Admin")
 
 

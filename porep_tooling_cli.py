@@ -19,6 +19,14 @@ ERROR_LOG_FILE = "logs/error.log"
 DEBUG = True
 
 
+# logs record addresses and transactions, so keep them readable by the owner only
+def make_private_dir(path: str):
+    os.makedirs(path, mode=0o700, exist_ok=True)
+
+    if os.name == "posix" and os.stat(path).st_uid == os.getuid():
+        os.chmod(path, 0o700)
+
+
 def configure_logger():
     import logging
 
@@ -38,7 +46,7 @@ def configure_logger():
             "all": logging.NOTSET
         }.get(level_str.strip().lower(), DEFAULT) if level_str else DEFAULT
 
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    make_private_dir(os.path.dirname(LOG_FILE))
 
     logging_format = "%(levelname)-10s%(asctime)s %(name)s:%(funcName)-16s: %(message)s"
 
@@ -82,7 +90,7 @@ def load_dotenv():
 def write_error_file():
     import traceback
 
-    os.makedirs(os.path.dirname(ERROR_LOG_FILE), exist_ok=True)
+    make_private_dir(os.path.dirname(ERROR_LOG_FILE))
 
     open(ERROR_LOG_FILE, "w", encoding="utf-8").close()
     if not os.path.exists(LOG_FILE):

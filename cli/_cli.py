@@ -1,5 +1,7 @@
 import click
 
+from cli import utils
+
 DRY_RUN: bool = False
 
 
@@ -15,6 +17,8 @@ def cli(dry_run: bool = False):
 
     global DRY_RUN
     DRY_RUN = dry_run
+
+    utils.warn_if_dotenv_exposed()
 
 
 def is_dry_run() -> bool:

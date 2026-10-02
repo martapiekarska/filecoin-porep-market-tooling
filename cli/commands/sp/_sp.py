@@ -109,7 +109,7 @@ def _info():
         click.echo(f"SP organization: {_sp_organization}")
 
     click.echo()
-    click.echo(f"SP wallet private key: {utils.private_str_to_log_str(SP_PRIVATE_KEY)}")
+    click.echo(f"SP wallet private key: {'set' if SP_PRIVATE_KEY else 'not set'}")  # never print any part of a key
     commands_utils.print_info(_sp_address, "SP wallet")
 
 

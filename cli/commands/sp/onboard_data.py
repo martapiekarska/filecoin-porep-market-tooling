@@ -16,7 +16,6 @@ from cli.commands.repair_utils import (
     RetrievalQuote,
     SourceUnavailable,
     child_env,
-    ensure_secret_file,
     find_healthy_source,
     get_retrieval_client_path,
     probe_piece,
@@ -149,7 +148,7 @@ def _move_lpr_downloads(pieces: list[dict], output_dir: Path) -> list[tuple[dict
 def _ensure_payee_key(deal, payee_key_file: str | None):
     if payee_key_file:
         # the payee also receives the SP's deal revenue, so treat its key like an SSH private key
-        ensure_secret_file(Path(payee_key_file), "payee key file")
+        utils.ensure_secret_file(Path(payee_key_file), "payee key file")
         private_key = Path(payee_key_file).read_text(encoding="utf-8").strip()
     elif os.getenv("FILPAY_PRIVATE_KEY"):
         click.echo("WARNING: FILPAY_PRIVATE_KEY exposes the payee key, which also receives your deal revenue, to every process "
