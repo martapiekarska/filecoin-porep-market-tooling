@@ -23,13 +23,10 @@ from cli.services.self_update import SelfUpdateService
 @click.option("--allow-repeat-deposit", is_flag=True, default=False,
               help="Deposit even though earlier deposits to the payee already cover the cost (e.g. they were for another deal with "
                    "the same SP).  [default: false]")
-@click.option("--token", "token_address",
-              help="ERC20 token the healthy SP's sp-proxy charges in (USDFC).  [default: DEAL_ID payment token]")
 def pay_repair_retrieval(deal_id: int,
                          repair_of: int | None = None,
                          source_url: str | None = None,
                          price_per_gib: Decimal | None = None,
-                         token_address: str | None = None,
                          allow_unverified_history: bool = False,
                          allow_repeat_deposit: bool = False):
     """
@@ -50,5 +47,5 @@ def pay_repair_retrieval(deal_id: int,
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    _repair.pay_repair_retrieval(deal_id, repair_of, source_url, price_per_gib, token_address,
+    _repair.pay_repair_retrieval(deal_id, repair_of, source_url, price_per_gib,
                                  allow_unverified_history=allow_unverified_history, allow_repeat_deposit=allow_repeat_deposit)

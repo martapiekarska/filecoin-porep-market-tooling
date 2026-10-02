@@ -165,7 +165,7 @@ def propose_deal(manifest_url: str,
             return
 
         click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
-        _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, payment_token, source)
+        _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, source=source)
 
 
 def _echo_repair_cost(pieces: list[dict], price_per_gib, payment_token: str):

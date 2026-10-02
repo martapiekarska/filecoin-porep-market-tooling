@@ -14,8 +14,9 @@ from web3.types import RPCEndpoint
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
-from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
-from cli.services.web3_service import ActorId, Web3Service
+from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
+from cli.services.contracts.sp_registry import SPRegistry
+from cli.services.web3_service import ActorId, EthAddress, Web3Service
 
 # FCSS repair: find a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges.
 #
@@ -347,6 +348,29 @@ def find_healthy_source(manifest_hash: bytes,
 
 def _price_str(source: RetrievalSource) -> str:
     return "free" if source.is_free() else f"{source.price_per_gib} tokens/GiB"
+
+
+# Shared by the client, who funds the repair retrieval, and the new SP, who spends it: both must use the same FileCoinPay
+# account (the deal's SP payee) and token (the deal's payment token), or the deposit lands where the retrieval can't use it.
+def resolve_repair_payee(deal: PoRepMarketDealView) -> EthAddress:
+    payee = deal.payment.payee
+
+    if int(payee, 16) == 0:
+        payee = SPRegistry().get_provider_view(deal.deal.provider_id).payee_address
+
+    if int(payee, 16) == 0:
+        raise click.ClickException(f"No payee address found for deal ID {deal.deal.deal_id} provider {deal.deal.provider_id}")
+
+    # retrieval-client signs with a plain secp256k1 key, so a contract payee (e.g. multisig) cannot retrieve
+    if Web3Service().w3().eth.get_code(payee):
+        raise click.ClickException(f"Deal ID {deal.deal.deal_id} payee {payee} is a contract; "
+                                   f"the repair retrieval needs an externally owned payee wallet.")
+
+    return EthAddress(payee)
+
+
+def repair_payment_token(deal: PoRepMarketDealView) -> EthAddress:
+    return EthAddress(deal.payment.payment_token)
 
 
 # Legacy (v1) repair: the client supplies the original manifest and the healthy source; the source is embedded in the

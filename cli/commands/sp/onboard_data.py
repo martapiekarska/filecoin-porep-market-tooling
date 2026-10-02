@@ -10,7 +10,13 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
-from cli.commands.repair_utils import ensure_secret_file, find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import (
+    ensure_secret_file,
+    find_healthy_source,
+    get_manifest_repair_source,
+    repair_payment_token,
+    resolve_repair_payee,
+)
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -170,8 +176,10 @@ def _ensure_payee_key(deal, payee_key_file: str | None):
     except ValueError as e:
         raise click.ClickException("Invalid payee private key") from e
 
-    if key_address != deal.payment.payee:
-        raise click.ClickException(f"Payee key address {key_address} does not match deal ID {deal.deal.deal_id} payee {deal.payment.payee}; "
+    payee = resolve_repair_payee(deal)
+
+    if key_address != payee:
+        raise click.ClickException(f"Payee key address {key_address} does not match deal ID {deal.deal.deal_id} payee {payee}; "
                                    f"the repair retrieval is funded in the deal payee's FileCoinPay account.")
 
 
@@ -193,7 +201,7 @@ def _download_with_lpr(ctx,
         defaults = {
             "--pay-rpc-url": utils.get_env_required("RPC_URL"),
             "--pay-payments-address": str(FileCoinPay().address()),
-            "--pay-token-address": str(deal.payment.payment_token),
+            "--pay-token-address": str(repair_payment_token(deal)),
         }
 
         command = [retrieval_client_path, "fetch",

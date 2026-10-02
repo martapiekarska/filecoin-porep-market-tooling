@@ -5,12 +5,19 @@ import click
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
-from cli.commands.repair_utils import AMOUNT_PRECISION, GIB_BYTES, RetrievalSource, find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import (
+    AMOUNT_PRECISION,
+    GIB_BYTES,
+    RetrievalSource,
+    find_healthy_source,
+    get_manifest_repair_source,
+    repair_payment_token,
+    resolve_repair_payee,
+)
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
-from cli.services.contracts.sp_registry import SPRegistry
 from cli.services.web3_service import EthAddress, Web3Service
 
 # FCSS repair flow: a new SP re-onboards a dataset by retrieving it from the surviving ("healthy") SP's
@@ -58,24 +65,6 @@ def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
     if bytes(repaired_deal.data.manifest_hash) != bytes(deal.data.manifest_hash):
         raise click.ClickException(f"Deal ID {deal.deal.deal_id} manifest hash does not match repaired deal ID {repair_of_deal_id}; "
                                    f"it is not a repair of the same dataset.")
-
-
-# The retrieval wallet is the SP payee recorded on-chain for the deal (set by the SP via `sp register-sp --payee-address`)
-def get_retrieval_wallet(deal: PoRepMarketDealView) -> EthAddress:
-    payee = deal.payment.payee
-
-    if int(payee, 16) == 0:
-        payee = SPRegistry().get_provider_view(deal.deal.provider_id).payee_address
-
-    if int(payee, 16) == 0:
-        raise click.ClickException(f"No payee address found for deal ID {deal.deal.deal_id} provider {deal.deal.provider_id}")
-
-    # retrieval-client signs with a plain secp256k1 key, so a contract payee (e.g. multisig) cannot retrieve
-    if Web3Service().w3().eth.get_code(payee):
-        raise click.ClickException(f"Deal ID {deal.deal.deal_id} payee {payee} is a contract; "
-                                   f"the repair retrieval needs an externally owned payee wallet.")
-
-    return EthAddress(payee)
 
 
 class DepositHistoryUnavailable(Exception):
@@ -178,7 +167,6 @@ def pay_repair_retrieval(deal_id: int,
                          repair_of_deal_id: int | None = None,
                          source_url: str | None = None,
                          price_per_gib: Decimal | None = None,
-                         token_address: str | None = None,
                          source: RetrievalSource | None = None,
                          allow_unverified_history: bool = False,
                          allow_repeat_deposit: bool = False):
@@ -225,9 +213,9 @@ def pay_repair_retrieval(deal_id: int,
 
         price_per_gib = source.price_per_gib
 
-    retrieval_wallet = get_retrieval_wallet(deal)
+    retrieval_wallet = resolve_repair_payee(deal)
 
-    token = ERC20Contract(EthAddress.from_any(token_address) if token_address else deal.payment.payment_token)
+    token = ERC20Contract(repair_payment_token(deal))
     token_decimals = token.decimals()
     token_symbol = token.symbol()
 
