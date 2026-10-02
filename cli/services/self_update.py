@@ -78,10 +78,8 @@ class SelfUpdateService:
 
             return None
 
+        # automatic checks only update main/master; manual checks work on any branch
         if not manual and branch_name not in ["main", "master"]:
-            if manual:
-                click.echo(f"Skipping update for branch '{branch_name}': not 'main' or 'master'.")
-
             return None
 
         # noinspection PyBroadException
