@@ -34,7 +34,8 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 - The app operates on **FEVM smart contracts** (thus EVM 0x-addresses) but **fully supports Filecoin f-addresses / Actor IDs** with proper conversion.
 - There are multiple ways of providing the user's private key for blockchain transactions and the priority is as follows:
     1. `[ADMIN|CLIENT|SP]_PRIVATE_KEY` variable in the system environment variables or in the local `.env` file,
-    2. `[ADMIN|CLIENT|SP]_LOTUS_WALLET` and `[ADMIN|CLIENT|SP]_LOTUS_TOKEN` variables when using Lotus wallet,
+    2. `[ADMIN|CLIENT|SP]_LOTUS_WALLET` and `[ADMIN|CLIENT|SP]_LOTUS_TOKEN` variables when using Lotus wallet (signing requests and the token go to
+       `LOTUS_RPC_URL`, your own Lotus node, which must be https or local; `RPC_URL` is used instead only when it is local),
     3. if non of those are set, the app will prompt the user to input the private key for required operations in a secure manner.
 - Read-only commands do not require private key / lotus wallet set, though some of them require user's address (`client --address` and `sp --organization`).
 - Rule of thumb: the private key / lotus wallet you set is the one that signs and sends transactions, \

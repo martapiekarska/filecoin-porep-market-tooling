@@ -1,5 +1,8 @@
 import base64
+import ipaddress
+import socket
 import time
+from urllib.parse import urlparse
 
 import click
 from eth_account.datastructures import SignedTransaction
@@ -295,6 +298,34 @@ class EthAddress(str):
         raise ValueError(f"Cannot convert {xinput!r} to Ethereum address: unsupported format")
 
 
+def _is_local_host(hostname: str) -> bool:
+    try:
+        address = ipaddress.ip_address(socket.gethostbyname(hostname))
+    except (OSError, ValueError):
+        return False
+
+    return address.is_loopback or address.is_private
+
+
+# The Lotus token can sign with the node's wallets, so it only goes to the user's own Lotus node: LOTUS_RPC_URL (HTTPS or a
+# local/private host), or RPC_URL when that is local. Never to a public RPC provider, and never in cleartext over the internet.
+def lotus_signing_url() -> str:
+    explicit_url = utils.get_env("LOTUS_RPC_URL")
+    url = explicit_url or utils.get_env_required("RPC_URL")
+    parsed = urlparse(url)
+    local = bool(parsed.hostname) and _is_local_host(parsed.hostname)
+
+    if not explicit_url and not local:
+        raise click.ClickException(f"Lotus wallet signing would send your Lotus token to RPC_URL {parsed.scheme}://{parsed.hostname}, "
+                                   f"which is not a local node; set LOTUS_RPC_URL to your own Lotus node's RPC URL.")
+
+    if parsed.scheme != "https" and not local:
+        raise click.ClickException(f"LOTUS_RPC_URL {parsed.scheme}://{parsed.hostname} must use https unless it is a local/private host, "
+                                   f"so the Lotus token is not sent in cleartext.")
+
+    return url
+
+
 class Web3Service:
     _instance: "Web3Service | None" = None
     ZERO_TX_HASH = "0x" + "00" * 32
@@ -381,7 +412,7 @@ class Web3Service:
             raise TypeError(f"Unsupported address type: {address!r}")
 
     def wallet_sign(self, from_address: FilAddress, raw_bytes: bytes, lotus_token: str) -> bytes:
-        _w3 = Web3(Web3.HTTPProvider(utils.get_env_required("RPC_URL"), request_kwargs={"headers": {"Authorization": f"Bearer {lotus_token}"}}))
+        _w3 = Web3(Web3.HTTPProvider(lotus_signing_url(), request_kwargs={"headers": {"Authorization": f"Bearer {lotus_token}"}}))
 
         response = _w3.provider.make_request(
             RPCEndpoint("Filecoin.WalletSign"),
