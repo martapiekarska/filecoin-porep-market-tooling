@@ -11,6 +11,7 @@ import humanfriendly
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.repair_utils import (
+    child_env,
     ensure_secret_file,
     find_healthy_source,
     get_manifest_repair_source,
@@ -222,7 +223,8 @@ def _download_with_lpr(ctx,
 
         utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
         click.echo("\n")
-        subprocess.run(command, check=True)
+        # the payee key is the only secret retrieval-client gets, and only when it comes from the environment
+        subprocess.run(command, check=True, env=child_env(keep=() if payee_key_file else ("FILPAY_PRIVATE_KEY",)))
 
     except subprocess.CalledProcessError as e:
         raise click.ClickException(f"retrieval-client failed with exit code {e.returncode}; see its output above") from e
