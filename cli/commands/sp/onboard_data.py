@@ -494,7 +494,7 @@ def onboard_data(ctx,
         subprocess.run(command, check=True, env=env)
 
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"aria2c failed with exit code {e.returncode}") from e
+        raise click.ClickException(f"aria2c failed with exit code {e.returncode}; see its output above") from e
 
     finally:
         aria2_file.unlink(missing_ok=True)
