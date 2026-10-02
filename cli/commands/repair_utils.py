@@ -98,7 +98,6 @@ class PieceProbe:
     status: str  # free | paid | private | unavailable
     size_bytes: int | None = None
     price: Decimal | None = None  # total quoted price for the piece, in decimal tokens
-    payee: str | None = None
     detail: str | None = None
 
 
@@ -234,7 +233,7 @@ def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
                 if not price.is_finite() or price < 0:
                     raise ValueError(f"invalid quoted price {challenge['price_usdfc']!r}")
 
-                return PieceProbe(status="paid", size_bytes=size, price=price, payee=challenge.get("payee_0x"))
+                return PieceProbe(status="paid", size_bytes=size, price=price)
 
             if resp.status_code == 403:
                 return PieceProbe(status="private", detail="403 Forbidden")
