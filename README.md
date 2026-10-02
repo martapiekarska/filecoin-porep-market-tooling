@@ -330,6 +330,11 @@ Limitations:
 
 ## Developing new CLI commands
 
+- **Never commit secrets**: private keys, Lotus/API tokens, JWTs or connection strings with passwords. Keep them in
+  gitignored files (`.env`, `*.key`, `cli/tests/e2e/.env.e2e.local`). Run `just install-hooks` once per clone to enable
+  the pre-commit secret scan ([gitleaks](https://github.com/gitleaks/gitleaks), rules in `.gitleaks.toml`); CI runs the
+  same scan on every push and pull request.
+
 - See files in `cli/commands` for examples of how to implement new commands.
 - Keep the code clean and simple, follow the existing patterns and best practices.
 - Use `Exception` (`ValueError`, `RuntimeError`, ...) for internal-like errors (things that "should not happen")

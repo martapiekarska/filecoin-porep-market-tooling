@@ -1,0 +1,17 @@
+#!/bin/sh
+# Blocks commits that add secret-shaped strings (private keys, API/Lotus tokens, JWTs, credentialed connection
+# strings), using the rules in .gitleaks.toml. Install for this clone with `just install-hooks`.
+# CI runs the same scan (.github/workflows/secret-scan.yml), so bypassing this hook does not get a secret merged.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed, so the secret scan cannot run; commit blocked." >&2
+    echo "  Install it (macOS: brew install gitleaks; other: https://github.com/gitleaks/gitleaks#installing) and retry." >&2
+    exit 1
+fi
+
+if ! gitleaks git --pre-commit --staged --config "$(git rev-parse --show-toplevel)/.gitleaks.toml" --redact --no-banner --verbose; then
+    echo "pre-commit: possible secret in staged changes (values redacted above); commit blocked." >&2
+    echo "  Move it to a gitignored file (.env, *.key, cli/tests/e2e/.env.e2e.local). If it is a public value," >&2
+    echo "  add a narrow allow-list entry to .gitleaks.toml with the reason." >&2
+    exit 1
+fi

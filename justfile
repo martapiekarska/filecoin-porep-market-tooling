@@ -19,13 +19,21 @@ flake8:
 ruff:
     ruff check .
 
+secrets:
+    gitleaks git . --config .gitleaks.toml --redact --no-banner
+    gitleaks dir . --config .gitleaks.toml --redact --no-banner
+
+# use the repo's git hooks (.githooks/pre-commit secret scan) in this clone
+install-hooks:
+    git config core.hooksPath .githooks
+
 lint: pylint flake8 ruff
     @echo "All linters passed."
 
 test-sh:
     chmod +x cli/tests/test.sh && cli/tests/test.sh
 
-check: lint test-sh
+check: secrets lint test-sh
     @echo "All checks passed."
 
 pre-push: check

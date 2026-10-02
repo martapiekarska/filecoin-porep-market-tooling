@@ -1,0 +1,62 @@
+# Secret scanning config for gitleaks (https://github.com/gitleaks/gitleaks), used by the pre-commit hook
+# (.githooks/pre-commit, install with `just install-hooks`) and the CI job (.github/workflows/secret-scan.yml).
+#
+# Never commit private keys, API/Lotus tokens, JWTs or credentialed connection strings. Put them in a gitignored
+# file (.env, cli/tests/e2e/.env.e2e.local, *.key) instead. Keep the allow-lists below narrow: add an exact value
+# or commit only after confirming it is public, and say why next to it.
+
+title = "filecoin-porep-market-tooling secret scanning"
+
+[extend]
+# all default gitleaks rules (PEM private keys, cloud/API tokens, JWTs, generic keyword secrets, ...)
+useDefault = true
+
+[[rules]]
+id = "secp256k1-raw-private-key"
+description = "Raw 32-byte hex value (with or without 0x): the format of Filecoin/EVM wallet private keys"
+# a standalone run of exactly 64 hex characters; longer hex runs (ABI bytecode, signatures) are not matched
+regex = '''(?:^|[^0-9A-Za-z])(?:0x)?([0-9a-fA-F]{64})(?:[^0-9A-Za-z]|$)'''
+secretGroup = 1
+# skips low-entropy placeholders such as 0x000...0 or repeated characters; random keys are ~3.7-3.9
+entropy = 3.0
+keywords = []
+
+[[rules]]
+id = "credentialed-connection-string"
+description = "URL or connection string with an embedded password (postgres://user:password@host, ...)"
+regex = '''\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@'"]+:([^\s/@'"]+)@[^\s'"]+'''
+secretGroup = 1
+keywords = ["://"]
+
+[[rules]]
+id = "jwt-any"
+description = "JSON Web Token, e.g. a Lotus API token (lotus auth create-token)"
+regex = '''\b(eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,})\b'''
+secretGroup = 1
+keywords = ["eyj"]
+
+[allowlist]
+description = "Public values and historical commits"
+regexTarget = "secret"
+regexes = [
+  # EVM and Filecoin addresses are public (contract, token and wallet addresses in .env.* files)
+  '''^0x[0-9a-fA-F]{40}$''',
+  '''^[ft]0[0-9]+$''',
+  '''^[ft][1-4][a-z2-7]{20,}$''',
+  # SHA-256 of the gitleaks v8.30.1 linux_x64 release tarball, pinned in .github/workflows/secret-scan.yml (public);
+  # update together with GITLEAKS_VERSION
+  '''^551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb$''',
+  # obvious placeholders in docs and templates
+  '''^(<[^>]*>|\$\{[^}]*\}|\$[A-Z_]+|\*+|x+|X+|password|changeme)$''',
+]
+# Commits already in history that added the burned test keys and the e2e Lotus token (security audit findings
+# 7-2, 7-3, 7-4). History is intentionally not rewritten; the keys are zero-balance and must never be funded, and
+# the Lotus token must be rotated at the issuing node. Any NEW commit adding these or other secrets is still blocked.
+commits = [
+  "0a2cfba6bf45683bc93e4d9ad0349d45bfbf1887",  # 2026-04-16 Create run-test-sh.yml (cli/test.sh)
+  "0b5f4e02e5a8992bd2098560febe63899631d794",  # 2026-04-16 Code review fixes (cli/.env.test)
+  "4fa3465a5d448da8950f14ce0b1c92346efc2d66",  # 2026-06-30 Update code for smart contracts v2 (cli/tests/e2e/.env.e2e)
+  "703d1c2a25e1154328833fa5fb1e06022dd8657b",  # 2026-04-12 v1 (cli/test.sh)
+  "96615c2eab1caca2d7026c485cface994f603f7a",  # 2026-04-27 Add SP_ORGANIZATION env support (cli/test.sh)
+  "fd4276cf40fa09db5a0171c9e9e128b376ebcaa8",  # 2026-04-14 Better private key / address validation (cli/test.sh)
+]
