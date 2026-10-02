@@ -15,7 +15,6 @@ from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_st
 from cli.commands.repair_utils import (
     RetrievalQuote,
     SourceUnavailable,
-    child_env,
     find_healthy_source,
     get_retrieval_client_path,
     probe_piece,
@@ -317,7 +316,7 @@ def _run_retrieval_client(ctx,
         utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
         click.echo("\n")
         # the payee key is the only secret retrieval-client gets, and only when it comes from the environment
-        subprocess.run(command, check=True, env=child_env(keep=() if key_file else ("FILPAY_PRIVATE_KEY",)))
+        subprocess.run(command, check=True, env=utils.child_env(keep=() if key_file else ("FILPAY_PRIVATE_KEY",)))
 
     except subprocess.CalledProcessError as e:
         raise click.ClickException(f"retrieval-client failed with exit code {e.returncode}; see its output above") from e
@@ -486,13 +485,9 @@ def onboard_data(ctx,
             callback_path = Path(sys.argv[0]).parent / "cli" / "commands" / "sp" / "_aria2_callback.py"
             command += [f"--on-download-complete={callback_path}"]
 
-            env = {
-                **os.environ,
-                "ARIA2C_CLAIM_ALLOCATIONS_SOFTWARE": claim_allocations,
-                "ARIA2C_DEAL_ID": str(deal_id),
-            }
+            env = utils.child_env(ARIA2C_CLAIM_ALLOCATIONS_SOFTWARE=claim_allocations, ARIA2C_DEAL_ID=str(deal_id))
         else:
-            env = None  # default argument
+            env = utils.child_env()
 
         utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
         click.echo("\n")

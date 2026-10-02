@@ -2,7 +2,6 @@ import base64
 import contextlib
 import ipaddress
 import logging
-import os
 import re
 import secrets
 import subprocess
@@ -41,17 +40,6 @@ _MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("d
 
 # /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
 _HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
-
-
-_SECRET_ENV_VAR = re.compile(r"(PRIVATE_KEY|LOTUS_TOKEN|DATABASE_URL)$")
-
-
-# Environment for external programs: everything except this CLI's secrets (private keys, Lotus tokens, database URLs),
-# which they don't need; `keep` names the exceptions.
-def child_env(keep: tuple[str, ...] = (), **extra: str) -> dict[str, str]:
-    env = {name: value for name, value in os.environ.items() if name in keep or not _SECRET_ENV_VAR.search(name)}
-    env.update(extra)
-    return env
 
 
 def get_retrieval_client_path() -> str:
@@ -140,7 +128,7 @@ def quote_retrieval(base_url: str, piece_cids: list[str]) -> RetrievalQuote:
 
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=RETRIEVAL_CLIENT_QUOTE_TIMEOUT_SECONDS,
-                                    env=child_env(), check=False)
+                                    env=utils.child_env(), check=False)
         except subprocess.TimeoutExpired as e:
             raise SourceUnavailable(f"retrieval-client quote timed out after {RETRIEVAL_CLIENT_QUOTE_TIMEOUT_SECONDS} s") from e
 

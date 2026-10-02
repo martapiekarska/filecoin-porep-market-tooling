@@ -178,6 +178,6 @@ def claim_allocations(ctx, software: str, deal_id: int, cars_dir: str | None = N
                 continue
 
             click.echo()
-            subprocess.run(command, check=True)
+            subprocess.run(command, check=True, env=utils.child_env())
         except subprocess.CalledProcessError as e:
             click.echo(f"\nCommand failed with exit code {e.returncode}")

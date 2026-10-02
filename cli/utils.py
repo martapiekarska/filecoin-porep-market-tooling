@@ -72,6 +72,14 @@ def ensure_secret_file(path: Path, description: str):
 _SECRET_ENV_VAR = re.compile(r"(PRIVATE_KEY|LOTUS_TOKEN|DATABASE_URL)$")
 
 
+# Environment for external programs (aria2c, retrieval-client, curio, boostd, this CLI re-invoked): everything except
+# this CLI's secrets (private keys, Lotus tokens, database URLs), which none of them needs; `keep` names the exceptions.
+def child_env(keep: tuple[str, ...] = (), **extra: str) -> dict[str, str]:
+    env = {name: value for name, value in os.environ.items() if name in keep or not _SECRET_ENV_VAR.search(name)}
+    env.update(extra)
+    return env
+
+
 # warns (stderr) when the .env file in use holds secrets but other users can read it
 def warn_if_dotenv_exposed():
     if not DOTENV_PATH:
