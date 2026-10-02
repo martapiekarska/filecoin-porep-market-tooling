@@ -306,11 +306,12 @@ def find_healthy_source(manifest_hash: bytes,
     click.echo("\nLooking for a healthy SP still serving this dataset (same manifest, other providers)...")
     candidates = []
 
-    for deal in commands_utils.get_all_deals(PoRepMarketDealState.ACTIVE):
-        if deal.provider_id in exclude_provider_ids or deal.provider_id in (c.deal.provider_id for c in candidates):
+    # full deal views in pages of 100: one RPC call per page instead of one per deal
+    for view in PoRepMarketViewHelper().get_deal_views():
+        if (view.deal.state != PoRepMarketDealState.ACTIVE
+                or view.deal.provider_id in exclude_provider_ids
+                or view.deal.provider_id in (c.deal.provider_id for c in candidates)):
             continue
-
-        view = PoRepMarketViewHelper().get_deal_view(deal.deal_id)
 
         if bytes(view.data.manifest_hash) == bytes(manifest_hash):
             candidates.append(view)
