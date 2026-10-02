@@ -1,3 +1,5 @@
+import os
+
 import click
 from eth_account.types import PrivateKeyType
 from eth_typing import HexStr
@@ -14,17 +16,20 @@ CLIENT_LOTUS_WALLET: str | None = None
 
 
 @click.group()
-@click.option("--private-key", envvar="CLIENT_PRIVATE_KEY", hidden=True)
 @click.option("--address", envvar="CLIENT_ADDRESS", show_envvar=True,
               help="Client address to use. Can be any format possible.  [default: derived from the provided private key / lotus wallet]")
 @click.option("--confirm-info", is_flag=True, default=False,
               help="Confirm current account info before executing command.  [default: false]")
 @click.option("--lotus-wallet", envvar="CLIENT_LOTUS_WALLET", show_envvar=True,
               help="Client Lotus wallet address used for signing blockchain transactions. Must be delegated f410 address or standard EVM address.")
-def client(address: str | None = None, private_key: str | None = None, confirm_info: bool = False, lotus_wallet: str | None = None):
+def client(address: str | None = None, confirm_info: bool = False, lotus_wallet: str | None = None):
     """
     Client commands for interacting with the PoRep Market.
     """
+
+    # raw keys come only from the environment / .env (or the hidden prompt), never from the command line,
+    # where they would end up in shell history and the process list
+    private_key = os.environ.get("CLIENT_PRIVATE_KEY") or None
 
     if private_key:
         global CLIENT_PRIVATE_KEY

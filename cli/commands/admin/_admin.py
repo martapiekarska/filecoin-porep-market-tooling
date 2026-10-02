@@ -1,3 +1,5 @@
+import os
+
 import click
 from eth_typing import HexStr
 
@@ -11,15 +13,18 @@ ADMIN_LOTUS_WALLET: str | None = None
 
 
 @click.group()
-@click.option("--private-key", envvar="ADMIN_PRIVATE_KEY", hidden=True)
 @click.option("--confirm-info", is_flag=True, default=False,
               help="Confirm current account info before executing command.  [default: false]")
 @click.option("--lotus-wallet", envvar="ADMIN_LOTUS_WALLET", show_envvar=True,
               help="Admin Lotus wallet address used for signing blockchain transactions. Must be delegated f410 address or standard EVM address.")
-def admin(private_key: str | None = None, confirm_info: bool = False, lotus_wallet: str | None = None):
+def admin(confirm_info: bool = False, lotus_wallet: str | None = None):
     """
     Admin commands for managing the PoRep Market.
     """
+
+    # raw keys come only from the environment / .env (or the hidden prompt), never from the command line,
+    # where they would end up in shell history and the process list
+    private_key = os.environ.get("ADMIN_PRIVATE_KEY") or None
 
     if private_key:
         global ADMIN_PRIVATE_KEY

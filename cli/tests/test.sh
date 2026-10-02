@@ -35,7 +35,7 @@ readonly OTHER_ADDRESS="$(key_address "$(new_key)")"  # an address none of the k
   python3 "${CLI_PATH}" config --help >/dev/null &&
 
   python3 "${CLI_PATH}" client --address "${ENV_ADDRESS}" info                          >/dev/null &&
-  python3 "${CLI_PATH}" admin --private-key "${ADMIN_ARG_KEY}" info >/dev/null &&
+  ADMIN_PRIVATE_KEY="${ADMIN_ARG_KEY}" python3 "${CLI_PATH}" admin info >/dev/null &&
   python3 "${CLI_PATH}" sp --organization "${ENV_ADDRESS}" info                         >/dev/null &&
   python3 "${CLI_PATH}" admin get-deals --help                                                                      >/dev/null &&
 
@@ -71,17 +71,17 @@ readonly OTHER_ADDRESS="$(key_address "$(new_key)")"  # an address none of the k
   (CLIENT_PRIVATE_KEY="${TEST_KEY}" \
     python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" info >/dev/null) &&
 
-  python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" --private-key "${TEST_KEY}" info >/dev/null &&
+  CLIENT_PRIVATE_KEY="${TEST_KEY}" python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" info >/dev/null &&
 
   # not matching keys but get commands should work
   (CLIENT_PRIVATE_KEY="${TEST_KEY}" \
     python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" get-deals >/dev/null) &&  # not matching with env
 
-  python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" --private-key "${TEST_KEY}" get-deals >/dev/null &&
+  CLIENT_PRIVATE_KEY="${TEST_KEY}" python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" get-deals >/dev/null &&
 
   # matching keys
-  python3 "${CLI_PATH}" client --address "${TEST_ADDRESS}" --private-key "${TEST_KEY}" info --test-keys >/dev/null &&
-  python3 "${CLI_PATH}" client --private-key "${TEST_KEY}" info --test-keys >/dev/null &&
+  CLIENT_PRIVATE_KEY="${TEST_KEY}" python3 "${CLI_PATH}" client --address "${TEST_ADDRESS}" info --test-keys >/dev/null &&
+  CLIENT_PRIVATE_KEY="${TEST_KEY}" python3 "${CLI_PATH}" client info --test-keys >/dev/null &&
 
   (CLIENT_PRIVATE_KEY="${TEST_KEY}" \
     python3 "${CLI_PATH}" client --address "${TEST_ADDRESS}" info --test-keys >/dev/null) &&
@@ -93,7 +93,10 @@ readonly OTHER_ADDRESS="$(key_address "$(new_key)")"  # an address none of the k
   ! (CLIENT_PRIVATE_KEY="${TEST_KEY}" \
     python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" info --test-keys >/dev/null 2>&1) &&
 
-  ! (python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" --private-key "${TEST_KEY}" info --test-keys >/dev/null 2>&1) &&
+  ! (CLIENT_PRIVATE_KEY="${TEST_KEY}" python3 "${CLI_PATH}" client --address "${OTHER_ADDRESS}" info --test-keys >/dev/null 2>&1) &&
+
+  # keys are never accepted on the command line (shell history, process list)
+  ! (python3 "${CLI_PATH}" client --private-key "${TEST_KEY}" info >/dev/null 2>&1) &&
 
   # dont fail when no keys provided for get commands
   CLIENT_PRIVATE_KEY="" \

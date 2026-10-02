@@ -1,3 +1,5 @@
+import os
+
 import click
 from eth_typing import HexStr
 
@@ -13,17 +15,20 @@ SP_LOTUS_WALLET: str | None = None
 
 
 @click.group()
-@click.option("--private-key", envvar="SP_PRIVATE_KEY", hidden=True)
 @click.option("--organization", envvar="SP_ORGANIZATION", show_envvar=True,
               help="Organization address to manage SPs from. Can be any format possible.")
 @click.option("--confirm-info", is_flag=True, default=False,
               help="Confirm current account info before executing command.  [default: false]")
 @click.option("--lotus-wallet", envvar="SP_LOTUS_WALLET", show_envvar=True,
               help="SP Lotus wallet address used for signing blockchain transactions. Must be delegated f410 address or standard EVM address.")
-def sp(private_key: str | None = None, organization: str | None = None, confirm_info: bool = False, lotus_wallet: str | None = None):
+def sp(organization: str | None = None, confirm_info: bool = False, lotus_wallet: str | None = None):
     """
     Storage Provider commands for interacting with the PoRep Market.
     """
+
+    # raw keys come only from the environment / .env (or the hidden prompt), never from the command line,
+    # where they would end up in shell history and the process list
+    private_key = os.environ.get("SP_PRIVATE_KEY") or None
 
     if private_key:
         global SP_PRIVATE_KEY
