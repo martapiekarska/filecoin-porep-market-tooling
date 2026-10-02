@@ -482,7 +482,7 @@ def onboard_data(ctx,
                    "--console-log-level=warn"] + ctx.args
 
         if claim_allocations:
-            callback_path = Path(sys.argv[0]).parent / "cli" / "commands" / "sp" / "_aria2_callback.py"
+            callback_path = Path(__file__).resolve().parent / "_aria2_callback.py"
             command += [f"--on-download-complete={callback_path}"]
 
             env = utils.child_env(ARIA2C_CLAIM_ALLOCATIONS_SOFTWARE=claim_allocations, ARIA2C_DEAL_ID=str(deal_id))
