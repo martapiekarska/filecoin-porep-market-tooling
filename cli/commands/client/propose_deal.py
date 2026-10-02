@@ -159,6 +159,11 @@ def propose_deal(manifest_url: str,
             click.echo(f"\nNo deal created; repair retrieval not paid. Once the deal exists, pay it with {retry_command}")
             return
 
+        if PoRepMarketViewHelper().get_deal_view(deal_id).deal.state not in _repair.PAYABLE_DEAL_STATES:
+            click.echo(f"\nDeal ID {deal_id} is not accepted yet. The repair deposit goes straight to the SP's payee and can only be "
+                       f"returned by the SP, so it is made once the SP accepts the deal: then run {retry_command}")
+            return
+
         click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
         _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, payment_token, source)
 

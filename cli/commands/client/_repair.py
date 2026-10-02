@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal
 from math import ceil
 
@@ -71,11 +70,17 @@ def get_retrieval_wallet(deal: PoRepMarketDealView) -> EthAddress:
     return EthAddress(payee)
 
 
-# The CLI keeps no local state, so previous repair deposits are found on-chain: client -> payee deposits since the deal was proposed
-def get_previous_repair_deposits(token: EthAddress, payee: EthAddress, since_block: int) -> int | None:
+class DepositHistoryUnavailable(Exception):
+    pass
+
+
+# The CLI keeps no local state, so previous repair deposits are found on-chain: client -> payee deposits since the deal was proposed.
+# RPC providers limit eth_getLogs block ranges differently, so the range starts at LOGS_BLOCK_RANGE (env) and is halved on
+# any error; errors a smaller range can't fix (e.g. a lookback limit for older deals) end in DepositHistoryUnavailable.
+def get_previous_repair_deposits(token: EthAddress, payee: EthAddress, since_block: int) -> int:
     filecoin_pay = FileCoinPay()
     latest_block = Web3Service().get_block_number()
-    block_range = LOGS_BLOCK_RANGE
+    block_range = utils.get_env_required("LOGS_BLOCK_RANGE", default=LOGS_BLOCK_RANGE, required_type=int)
     start = since_block
     total = 0
 
@@ -89,18 +94,53 @@ def get_previous_repair_deposits(token: EthAddress, payee: EthAddress, since_blo
             total += filecoin_pay.get_deposited_amount(token, client_address(), payee, start, end)
             start = end + 1
 
-        # RPC providers cap eth_getLogs block ranges differently (e.g. "block range exceeds maximum of 360"); shrink and retry
         # pylint: disable=broad-exception-caught
         except Exception as e:
-            match = re.search(r"maximum of (\d+)", str(e))
-            block_range = min(int(match.group(1)), block_range - 1) if match else block_range // 2
+            block_range //= 2
 
-            # other errors (e.g. a provider's lookback limit for older deals) won't go away with a smaller range
-            if "range" not in str(e).lower() or block_range < MIN_LOGS_BLOCK_RANGE:
-                click.echo(f"WARNING: could not check previous deposits to {payee}: {e}")
-                return None
+            if block_range < MIN_LOGS_BLOCK_RANGE:
+                raise DepositHistoryUnavailable(f"RPC could not serve deposit logs for epochs {start}-{end}: {e}") from e
 
     return total
+
+
+# Fails closed: a repeat deposit can only be recovered by the SP returning it. Returns the amount to deposit.
+def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: int, cost: int, token_decimals: int, token_symbol: str,
+                             allow_unverified_history: bool, allow_repeat_deposit: bool) -> int:
+    #
+    def amount_str(amount: int) -> str:
+        return f"{utils.str_from_wei(amount, token_decimals)} {token_symbol}"
+
+    try:
+        previous = get_previous_repair_deposits(token, payee, since_block)
+
+    except DepositHistoryUnavailable as e:
+        if not allow_unverified_history:
+            raise click.ClickException(f"Could not check earlier deposits to {payee}, so a double payment can't be ruled out: {e}\n"
+                                       f"Use an RPC_URL that serves logs back to epoch {since_block}, or check the payee's deposits yourself "
+                                       f"and re-run with --allow-unverified-history.") from e
+
+        utils.confirm(f"\nWARNING: earlier deposits to {payee} could not be checked ({e}); you confirmed they were checked "
+                      f"another way. Deposit {amount_str(cost)}?", default=False, abort=True)
+        return cost
+
+    if previous >= cost:
+        if not allow_repeat_deposit:
+            raise click.ClickException(f"{amount_str(previous)} were already deposited from {client_address()} to {payee} since the deal "
+                                       f"was proposed, covering the {amount_str(cost)} repair cost; not depositing again. If those deposits "
+                                       f"were for another deal with the same SP, re-run with --allow-repeat-deposit.")
+
+        utils.confirm(f"\nWARNING: {amount_str(previous)} already deposited to {payee} since the deal was proposed. "
+                      f"Deposit another {amount_str(cost)}?", default=False, abort=True)
+        return cost
+
+    if previous > 0:
+        shortfall = cost - previous
+        click.echo(f"\n{amount_str(previous)} already deposited to {payee} since the deal was proposed; "
+                   f"the remaining repair cost is {amount_str(shortfall)}.")
+        return shortfall
+
+    return cost
 
 
 def find_repair_source(deal: PoRepMarketDealView,
@@ -122,12 +162,18 @@ def ensure_repairable(deal: PoRepMarketDealView):
                                    f"to their owner, so the new SP could not retrieve the data. Only PUBLIC deals can be repaired.")
 
 
+# the deposit goes straight to the SP's payee and can't be clawed back, so it waits until the SP has accepted the deal
+PAYABLE_DEAL_STATES = (PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE)
+
+
 def pay_repair_retrieval(deal_id: int,
                          repair_of_deal_id: int | None = None,
                          source_url: str | None = None,
                          price_per_gib: Decimal | None = None,
                          token_address: str | None = None,
-                         source: RetrievalSource | None = None):
+                         source: RetrievalSource | None = None,
+                         allow_unverified_history: bool = False,
+                         allow_repeat_deposit: bool = False):
     #
     Web3Service().wait_for_pending_transactions(client_address())
 
@@ -137,8 +183,12 @@ def pay_repair_retrieval(deal_id: int,
         raise click.ClickException(f"Deal ID {deal_id} client address {deal.deal.client_address} "
                                    f"does not match with connected client address {client_address()}.")
 
-    if deal.deal.state not in (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
-        raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected PROPOSED, ACCEPTED or ACTIVE")
+    if deal.deal.state == PoRepMarketDealState.PROPOSED:
+        raise click.ClickException(f"Deal ID {deal_id} is still PROPOSED. The repair deposit goes straight to the SP's payee and can only "
+                                   f"be returned by the SP, so it is made once the SP has accepted the deal; run this again then.")
+
+    if deal.deal.state not in PAYABLE_DEAL_STATES:
+        raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected ACCEPTED or ACTIVE")
 
     if repair_of_deal_id is not None:
         ensure_same_dataset(deal, repair_of_deal_id)
@@ -189,25 +239,24 @@ def pay_repair_retrieval(deal_id: int,
                f"  New SP retrieval wallet (deal payee): {retrieval_wallet}\n"
                f"  Client token balance: {token_balance_str} {token_symbol}")
 
-    previous_deposits = get_previous_repair_deposits(token.address(), retrieval_wallet, deal.deal.proposed_at_epoch)
-    if previous_deposits:
-        utils.confirm(f"\nWARNING: {utils.str_from_wei(previous_deposits, token_decimals)} {token_symbol} were already deposited "
-                      f"from {client_address()} to {retrieval_wallet} since deal ID {deal_id} was proposed; "
-                      f"the repair retrieval may already be paid. Deposit another {cost_str} {token_symbol} anyway?", default=False, abort=True)
+    deposit = _check_previous_deposits(token.address(), retrieval_wallet, deal.deal.proposed_at_epoch, cost, token_decimals, token_symbol,
+                                       allow_unverified_history, allow_repeat_deposit)
+    deposit_str = utils.str_from_wei(deposit, token_decimals)
 
-    if token_balance < cost:
-        raise click.ClickException(f"Insufficient {token_symbol} balance {token_balance_str} for repair retrieval cost {cost_str} {token_symbol}")
+    if token_balance < deposit:
+        raise click.ClickException(f"Insufficient {token_symbol} balance {token_balance_str} for repair retrieval deposit {deposit_str} {token_symbol}")
 
-    utils.confirm(f"\nDeposit {cost_str} {token_symbol} one-off from {client_address()} into the FileCoinPay account "
-                  f"of deal ID {deal_id} payee {retrieval_wallet}?", abort=True)
+    utils.confirm(f"\nDeposit {deposit_str} {token_symbol} one-off from {client_address()} into the FileCoinPay account "
+                  f"of deal ID {deal_id} payee {retrieval_wallet}?\n"
+                  f"This deposit is NOT refundable through this CLI or FileCoinPay: only the SP can return it.", abort=True)
 
     filecoin_pay = FileCoinPay()
 
     # FileCoinPay permit deposits must credit the permit signer, so a third-party deposit needs a plain ERC20 approval
-    if token.allowance(client_address(), filecoin_pay.address()) < cost:
-        tx_hash = token.approve(filecoin_pay.address(), cost, client_signer()).tx_hash
-        click.echo(f"Approved FileCoinPay to spend {cost_str} {token_symbol}: {tx_hash}")
+    if token.allowance(client_address(), filecoin_pay.address()) < deposit:
+        tx_hash = token.approve(filecoin_pay.address(), deposit, client_signer()).tx_hash
+        click.echo(f"Approved FileCoinPay to spend {deposit_str} {token_symbol}: {tx_hash}")
         Web3Service().wait_for_pending_transactions(client_address())
 
-    tx_hash = filecoin_pay.deposit(token.address(), retrieval_wallet, cost, client_signer()).tx_hash
-    click.echo(f"Deposited {cost_str} {token_symbol} for repair retrieval of deal ID {deal_id} to {retrieval_wallet}: {tx_hash}")
+    tx_hash = filecoin_pay.deposit(token.address(), retrieval_wallet, deposit, client_signer()).tx_hash
+    click.echo(f"Deposited {deposit_str} {token_symbol} for repair retrieval of deal ID {deal_id} to {retrieval_wallet}: {tx_hash}")

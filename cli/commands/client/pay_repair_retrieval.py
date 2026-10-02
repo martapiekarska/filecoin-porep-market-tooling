@@ -17,13 +17,21 @@ from cli.services.self_update import SelfUpdateService
                    "[default: auto-detected from other providers' deals for the same dataset]")
 @click.option("--price-per-gib", type=DecimalAmount(min_open=True),
               help="Override: retrieval price in decimal tokens per GiB.  [default: quoted by the healthy SP]")
+@click.option("--allow-unverified-history", is_flag=True, default=False,
+              help="Deposit even if earlier deposits to the payee can't be checked (RPC log limits); only after checking them yourself.  "
+                   "[default: false]")
+@click.option("--allow-repeat-deposit", is_flag=True, default=False,
+              help="Deposit even though earlier deposits to the payee already cover the cost (e.g. they were for another deal with "
+                   "the same SP).  [default: false]")
 @click.option("--token", "token_address",
               help="ERC20 token the healthy SP's sp-proxy charges in (USDFC).  [default: DEAL_ID payment token]")
 def pay_repair_retrieval(deal_id: int,
                          repair_of: int | None = None,
                          source_url: str | None = None,
                          price_per_gib: Decimal | None = None,
-                         token_address: str | None = None):
+                         token_address: str | None = None,
+                         allow_unverified_history: bool = False,
+                         allow_repeat_deposit: bool = False):
     """
     One-off payment of a repair retrieval for a new SP.
 
@@ -42,4 +50,5 @@ def pay_repair_retrieval(deal_id: int,
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    _repair.pay_repair_retrieval(deal_id, repair_of, source_url, price_per_gib, token_address)
+    _repair.pay_repair_retrieval(deal_id, repair_of, source_url, price_per_gib, token_address,
+                                 allow_unverified_history=allow_unverified_history, allow_repeat_deposit=allow_repeat_deposit)
