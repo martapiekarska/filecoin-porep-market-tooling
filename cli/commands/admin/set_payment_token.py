@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import click
 
 from cli import utils
@@ -11,8 +13,8 @@ from cli.services.web3_service import Web3Service, EthAddress
 @click.command()
 @click.argument("token_address")
 @click.argument("allowed")
-@click.argument("min_price_per_32_gib_per_month", type=click.FloatRange(min=0))
-def set_payment_token(token_address: str, allowed: str, min_price_per_32_gib_per_month: float):
+@click.argument("min_price_per_32_gib_per_month", type=utils.DecimalAmount())
+def set_payment_token(token_address: str, allowed: str, min_price_per_32_gib_per_month: Decimal):
     """
     Set payment token configuration in the SPRegistry contract.
 

@@ -26,7 +26,7 @@ PENDING_DEAL_STATES = (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEP
 @click.option("--source-url",
               help="Override: base URL of the healthy SP's piece server / sp-proxy (e.g. https://sp.example.com:8787).  "
                    "[default: auto-detected from other providers' deals for the same dataset]")
-@click.option("--price-per-tib-per-month", type=click.FloatRange(min=0, min_open=True),
+@click.option("--price-per-tib-per-month", type=utils.DecimalAmount(min_open=True),
               help="Maximum monthly price per 1 TiB for the new deal, in the deal's payment token.  [default: DEAL_ID's price]")
 @click.option("--duration-months", type=click.IntRange(min=6),
               help="Duration of the new deal in months.  [default: DEAL_ID's duration]")
@@ -45,7 +45,7 @@ PENDING_DEAL_STATES = (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEP
 def repair(ctx,
            deal_id: int,
            source_url: str | None = None,
-           price_per_tib_per_month: float | None = None,
+           price_per_tib_per_month: Decimal | None = None,
            duration_months: int | None = None,
            wait_minutes: int = 10,
            repair_deal: int | None = None,
@@ -214,7 +214,7 @@ def _given_repair_deal(old_deal: PoRepMarketDealView, repair_deal_id: int) -> Po
 
 def _propose_repair_deal(old_deal: PoRepMarketDealView,
                          source_url: str | None,
-                         price_per_tib_per_month: float | None,
+                         price_per_tib_per_month: Decimal | None,
                          duration_months: int | None) -> tuple[int | None, RetrievalSource]:
     #
     manifest_url = _repair.with_repair_marker(old_deal.data.manifest_location, old_deal.deal.deal_id)
@@ -241,11 +241,11 @@ def _propose_repair_deal(old_deal: PoRepMarketDealView,
 
 
 # propose_deal takes a decimal price per TiB; only reuse the old price if it converts back to exactly the same per-sector price
-def _old_price_per_tib(old_deal: PoRepMarketDealView) -> float:
+def _old_price_per_tib(old_deal: PoRepMarketDealView) -> Decimal:
     decimals = ERC20Contract(old_deal.payment.payment_token).decimals()
     sector_size_bytes = PoRepMarket().get_sector_size_bytes()
     price_per_sector = old_deal.payment.price_per_32_gib_per_month
-    price = float(Decimal(price_per_sector * (1024 ** 4 // sector_size_bytes)).scaleb(-decimals))
+    price = Decimal(price_per_sector * (1024 ** 4 // sector_size_bytes)).scaleb(-decimals)
 
     try:
         if utils.price_per_TiB_tokens_to_per_sector_wei(price, decimals, sector_size_bytes) == price_per_sector:

@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 import psycopg
 
@@ -11,7 +12,7 @@ class SPRegistryDBSLAClass:
     sla_id: int
     provider_id: int
     sla_class: str
-    price_per_tib_usd: float
+    price_per_tib_usd: Decimal
     specific_miner_id: ActorId | None
     regional_pricing: list[dict]
 
@@ -25,7 +26,7 @@ class SPRegistryDBSLAClass:
             sla_id=int(data[0]),
             provider_id=int(data[1]),
             sla_class=data[2],
-            price_per_tib_usd=float(data[3]),
+            price_per_tib_usd=Decimal(str(data[3])),
             specific_miner_id=ActorId(data[4]) if data[4] is not None else None,
             regional_pricing=data[5],
             # created_at=data[6],
@@ -60,7 +61,7 @@ class SPRegistryDBOrganization:
     payment_address_evm: EthAddress
     deal_duration_min_months: int
     deal_duration_max_months: int
-    min_price_per_tib_usd: float
+    min_price_per_tib_usd: Decimal
     sp_software: list[str]
     capacity_commitment: str
     controller_address: str | None = None
@@ -101,7 +102,7 @@ class SPRegistryDBOrganization:
             payment_address_evm=EthAddress(data[22]),
             deal_duration_min_months=int(data[23]),
             deal_duration_max_months=int(data[24]),
-            min_price_per_tib_usd=float(data[25]),
+            min_price_per_tib_usd=Decimal(str(data[25])),
             sp_software=data[26],
             capacity_commitment=data[27],
             controller_address=data[28],

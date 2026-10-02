@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 import click
 
+from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.sp._sp import sp_address, sp_signer
 from cli.services.self_update import SelfUpdateService
@@ -8,9 +11,9 @@ from cli.services.web3_service import EthAddress
 
 @click.command()
 @click.argument("to_address")
-@click.argument("amount", type=click.FloatRange(min=0, min_open=True))
+@click.argument("amount", type=utils.DecimalAmount(min_open=True))
 @click.argument("token_address", envvar="USDC_TOKEN")
-def withdraw_from_filecoinpay(to_address: str, amount: float, token_address: str):
+def withdraw_from_filecoinpay(to_address: str, amount: Decimal, token_address: str):
     """
     Withdraw funds from FileCoinPay account.
 

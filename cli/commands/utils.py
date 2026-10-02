@@ -2,7 +2,7 @@ import ipaddress
 import json
 import socket
 import sys
-from math import ceil
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
@@ -357,7 +357,7 @@ def get_filecoinpay_account(token_address: EthAddress, owner_address: EthAddress
     }
 
 
-def withdraw_from_filecoinpay(to_address: str, amount: float, token_address: EthAddress, from_address: EthAddress, signer: TxSigner) -> str:
+def withdraw_from_filecoinpay(to_address: str, amount: Decimal, token_address: EthAddress, from_address: EthAddress, signer: TxSigner) -> str:
     _to_address = EthAddress.from_any(to_address)
 
     token = ERC20Contract(token_address)
@@ -558,22 +558,25 @@ def calculate_deposit_amount(size_bytes: int,
                              sector_size_bytes: int,
                              deposit_for_months: int = 1) -> int:
     #
-    assert deposit_for_months > 0
+    if deposit_for_months <= 0:
+        raise ValueError(f"Invalid deposit months: {deposit_for_months}")
 
-    deal_size_sectors = utils.bytes_to_sectors(size_bytes, sector_size_bytes)
-    result = deal_size_sectors * price_per_sector_per_month * deposit_for_months
+    # integer maths: size / sector size * price * months, rounded up to a whole base unit
+    result, remainder = divmod(size_bytes * price_per_sector_per_month * deposit_for_months, sector_size_bytes)
 
-    if result != ceil(result):
-        utils.confirm(f"Calculated deposit amount {result} != {ceil(result)}. Continue?", default=True, abort=True, session_id="calculated-deposit-amount")
+    if remainder:
+        utils.confirm(f"Calculated deposit amount {result} base units has a fractional part; rounding up to {result + 1}. Continue?",
+                      default=True, abort=True, session_id="calculated-deposit-amount")
+        result += 1
 
-    return ceil(result)
+    return result
 
 
 def propose_deal(signer: TxSigner,
                  manifest_url: str,
                  retrievability_pct: int,
                  bandwidth_mbps: int,
-                 price_per_tib_per_month: float,
+                 price_per_tib_per_month: Decimal,
                  duration_months: int,
                  latency_ms: int,
                  indexing_pct: int,

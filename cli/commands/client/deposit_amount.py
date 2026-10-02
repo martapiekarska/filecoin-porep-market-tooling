@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import click
 
 from cli import utils
@@ -9,9 +11,9 @@ from cli.services.web3_service import EthAddress
 
 
 @click.command()
-@click.argument("amount", type=click.FloatRange(min=0, min_open=True))
+@click.argument("amount", type=utils.DecimalAmount(min_open=True))
 @click.argument("token_address", envvar="USDC_TOKEN")
-def deposit_amount(amount: float, token_address: str):
+def deposit_amount(amount: Decimal, token_address: str):
     """
     Deposit a specified amount of ERC20 token to FileCoinPay account.
 

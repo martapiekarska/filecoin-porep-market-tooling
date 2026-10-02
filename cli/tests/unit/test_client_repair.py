@@ -1,4 +1,5 @@
 import importlib
+from decimal import Decimal
 from types import SimpleNamespace
 
 import click
@@ -105,7 +106,7 @@ def test_old_terms_convert_back_exactly(monkeypatch):
     monkeypatch.setattr(repair_module, "PoRepMarket", lambda: SimpleNamespace(get_sector_size_bytes=lambda: 32 * 2 ** 30))
     old = SimpleNamespace(deal=SimpleNamespace(deal_id=2), payment=SimpleNamespace(payment_token="0xUSDFC", price_per_32_gib_per_month=125 * 10 ** 15),
                           terms=SimpleNamespace(duration_epochs=518400))
-    assert repair_module._old_price_per_tib(old) == 4.0
+    assert repair_module._old_price_per_tib(old) == Decimal(4)
     assert repair_module._old_duration_months(old) == 6
 
     old.terms.duration_epochs += 1

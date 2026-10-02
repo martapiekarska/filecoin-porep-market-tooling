@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import click
 
 from cli import utils
@@ -12,7 +14,7 @@ from cli.services.web3_service import EthAddress
 @click.command()
 @click.argument("offer_id", type=click.IntRange(min=1))
 @click.argument("manifest_url")
-@click.option("--price-per-tib-per-month", type=click.FloatRange(min=0, min_open=True), required=True,
+@click.option("--price-per-tib-per-month", type=utils.DecimalAmount(min_open=True), required=True,
               prompt="Enter maximum monthly price per 1 TiB in decimal format in given --payment-token tokens (e.g., 1.5 for 1.5 USDC)",
               help="Maximum monthly price per 1 TiB in decimal format in given --payment-token tokens. (e.g., 1.5 for 1.5 USDC).")
 @click.option("--duration-months", type=click.IntRange(min=6), required=True,
@@ -44,7 +46,7 @@ def propose_deal_for_offer(offer_id: int,
                            manifest_url: str,
                            retrievability_pct: int,
                            bandwidth_mbps: int,
-                           price_per_tib_per_month: float,
+                           price_per_tib_per_month: Decimal,
                            duration_months: int,
                            latency_ms: int,
                            indexing_pct: int,

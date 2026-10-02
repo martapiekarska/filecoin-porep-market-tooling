@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import click
 import humanfriendly
 
@@ -28,7 +30,7 @@ from cli.services.web3_service import Web3Service, EthAddress, ActorId
 @click.option("--payment-token", envvar="USDC_TOKEN", required=True,
               prompt="Enter address of the ERC20 token to be paid with",
               help="Address of the ERC20 token to be paid with.  [default: USDC_TOKEN env var]")
-@click.option("--min-price-per-tib-per-month", type=click.FloatRange(min=0, min_open=True), required=True,
+@click.option("--min-price-per-tib-per-month", type=utils.DecimalAmount(min_open=True), required=True,
               prompt="Enter minimum monthly price per 1 TiB in decimal format in given --payment-token tokens (e.g., 1.5 for 1.5 USDC)",
               help="Minimum monthly price per 1 TiB in decimal format in given --payment-token tokens. (e.g., 1.5 for 1.5 USDC).")
 @click.option("--retrievability-pct", type=click.IntRange(0, 100), required=True,
@@ -49,7 +51,7 @@ def register_offer(provider_id: str,
                    min_duration_months: int,
                    max_duration_months: int,
                    payment_token: str,
-                   min_price_per_tib_per_month: float,
+                   min_price_per_tib_per_month: Decimal,
                    retrievability_pct: int,
                    bandwidth_mbps: int,
                    latency_ms: int,

@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from collections.abc import Callable
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import TypeVar
 
 import click
@@ -180,24 +181,62 @@ def json_pretty(json_data, sort_keys: bool = False):
     return json.dumps(_json_pretty(json_data), indent=4, sort_keys=sort_keys, default=str)
 
 
-# converts 1100000000000000000 wei -> 1.1 ETH
-def from_wei(amount: float, decimals: int) -> float:
-    return amount / (10 ** decimals)
+# Token amounts are Decimals parsed from the user's text and integers in base units; never binary floats, which can't
+# represent most decimal amounts exactly (e.g. 1.1 * 10**18 as a float is 128 base units off).
+AMOUNT_PRECISION = 100  # significant digits for amount arithmetic; uint256 has at most 78
 
 
-def str_from_wei(amount: float, decimals: int) -> str:
-    # pylint: disable=consider-using-f-string
-    return "{:.{}f}".format(from_wei(amount, decimals), decimals)  # cannot be f-string because decimals is dynamic
+class DecimalAmount(click.ParamType):
+    name = "decimal"
+
+    def __init__(self, min_value: Decimal | int = 0, min_open: bool = False):
+        self.min_value = Decimal(min_value)
+        self.min_open = min_open
+
+    def convert(self, value, param, ctx) -> Decimal:
+        if isinstance(value, Decimal):
+            result = value
+        else:
+            try:
+                result = Decimal(str(value).strip())
+            except InvalidOperation:
+                self.fail(f"{value!r} is not a decimal number", param, ctx)
+
+        if not result.is_finite():
+            self.fail(f"{value!r} is not a finite number", param, ctx)
+
+        if result < self.min_value or (self.min_open and result == self.min_value):
+            self.fail(f"{value} is not {'>' if self.min_open else '>='} {self.min_value}", param, ctx)
+
+        return result
 
 
-# converts 1.1 ETH -> 1100000000000000000 wei
-def to_wei(amount: float, decimals: int) -> int:
-    result = amount * (10 ** decimals)
+def to_decimal(amount: Decimal | str | float) -> Decimal:
+    # a float (e.g. from a database driver) is converted from its shortest repr, i.e. the decimal it was written as
+    return amount if isinstance(amount, Decimal) else Decimal(str(amount))
 
-    if result != int(result):
-        raise ValueError(f"Precision lost: {result:.10f} != {int(result)}")
 
-    return int(result)
+# converts 1100000000000000000 wei -> Decimal("1.1") ETH, exactly
+def from_wei(amount: int, decimals: int) -> Decimal:
+    with localcontext() as ctx:
+        ctx.prec = AMOUNT_PRECISION
+        return Decimal(int(amount)).scaleb(-decimals)
+
+
+def str_from_wei(amount: int, decimals: int) -> str:
+    return f"{from_wei(amount, decimals):.{decimals}f}"
+
+
+# converts 1.1 ETH -> 1100000000000000000 wei, exactly; refuses amounts with more decimal places than the token has
+def to_wei(amount: Decimal | str | float, decimals: int) -> int:
+    with localcontext() as ctx:
+        ctx.prec = AMOUNT_PRECISION
+        result = to_decimal(amount).scaleb(decimals)
+
+        if result != result.to_integral_value():
+            raise click.ClickException(f"Amount {amount} has more than {decimals} decimal places")
+
+        return int(result)
 
 
 # returns minimal size if size is None
@@ -245,8 +284,11 @@ def private_str_to_log_str(private_str) -> str:
     return "*" * 5
 
 
-def bytes_to_sectors(bytes_size: int, sector_size_bytes: int) -> float:
-    return bytes_size / sector_size_bytes
+# for display only; do size arithmetic in integers
+def bytes_to_sectors(bytes_size: int, sector_size_bytes: int) -> Decimal:
+    with localcontext() as ctx:
+        ctx.prec = AMOUNT_PRECISION
+        return (Decimal(bytes_size) / Decimal(sector_size_bytes)).normalize()
 
 
 def months_to_epochs(months: int, epochs_in_month: int) -> int:
@@ -263,7 +305,7 @@ def Mbps_to_Bps(Mbps: int) -> int:
 # noinspection PyPep8Naming,PyShadowingNames
 # pylint: disable=invalid-name
 def price_per_TiB_tokens_to_per_sector_wei(
-        price_per_TiB_tokens: float,
+        price_per_TiB_tokens: Decimal,
         payment_token_decimals: int,
         sector_size_bytes: int,
 ) -> int:
@@ -281,7 +323,8 @@ def price_per_TiB_tokens_to_per_sector_wei(
     price_per_sector_wei, price_remainder = divmod(price_per_TiB_wei, sectors_per_TiB)
 
     if price_remainder != 0:
-        raise ValueError(f"Precision lost: {price_per_TiB_wei} / {sectors_per_TiB} has remainder {price_remainder}")
+        raise click.ClickException(f"Price {price_per_TiB_tokens} per TiB does not split exactly into {sectors_per_TiB} sectors "
+                                   f"in base units; use a price whose base-unit value is a multiple of {sectors_per_TiB}")
 
     return price_per_sector_wei
 

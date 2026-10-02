@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import click
 import humanfriendly
 
@@ -83,7 +85,7 @@ def get_db_offers(db_url: str,
     # noinspection PyPep8Naming
     # pylint: disable=invalid-name
     def payment_type_to_payment_input(payment_type: str,
-                                      price_per_TiB_tokens: float,
+                                      price_per_TiB_tokens: Decimal,
                                       sector_size_bytes: int) -> SPRegistryOfferPaymentInput:
         #
         # noinspection PyShadowingNames
