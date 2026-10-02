@@ -53,3 +53,38 @@ def test_inconsistent_quotes_use_the_highest_price(monkeypatch):
                         lambda base_url, cid: repair_utils.PieceProbe(status="paid", size_bytes=3 * GIB, price=next(prices)))
     source, _ = repair_utils.probe_source("https://sp.example", [{"pieceCid": "a", "fileSize": 3 * GIB}, {"pieceCid": "b", "fileSize": 3 * GIB}])
     assert source.price_per_gib == Decimal("0.02")
+
+
+class _Response:
+    def __init__(self, status_code, headers):
+        self.status_code, self.headers = status_code, headers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _challenge(request: object) -> str:
+    import base64
+    import json
+    encoded = base64.urlsafe_b64encode(json.dumps(request).encode()).rstrip(b"=").decode()
+    return f'Payment id="x", realm="piece:h", method="filecoinpay", intent="charge", request="{encoded}"'
+
+
+@pytest.mark.parametrize("www_authenticate, expected", [
+    (_challenge({"price_usdfc": "0.31", "payee_0x": "0xabc"}), "paid"),
+    (_challenge({"price_usdfc": "not-a-number"}), "unavailable"),
+    (_challenge({"price_usdfc": "NaN"}), "unavailable"),
+    (_challenge({"price_usdfc": "-1"}), "unavailable"),
+    (_challenge(["not", "an", "object"]), "unavailable"),
+    (_challenge({}), "unavailable"),
+    ('Payment request="!!!not-base64!!!"', "unavailable"),
+    ("Bearer something-else", "unavailable"),
+])
+def test_malformed_quotes_make_the_source_unavailable(monkeypatch, www_authenticate, expected):
+    monkeypatch.setattr(repair_utils.commands_utils, "validate_and_parse_url", lambda url: None)
+    monkeypatch.setattr(repair_utils.requests, "head", lambda *a, **k: _Response(200, {"Content-Length": str(31 * GIB)}))
+    monkeypatch.setattr(repair_utils.requests, "get", lambda *a, **k: _Response(402, {"WWW-Authenticate": www_authenticate}))
+    assert repair_utils.probe_piece("https://sp.example", "baga").status == expected

@@ -216,7 +216,7 @@ def _download_with_lpr(ctx,
         subprocess.run(command, check=True)
 
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"retrieval-client failed with exit code {e.returncode}") from e
+        raise click.ClickException(f"retrieval-client failed with exit code {e.returncode}; see its output above") from e
 
     finally:
         cid_file.unlink(missing_ok=True)

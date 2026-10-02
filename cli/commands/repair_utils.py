@@ -228,14 +228,20 @@ def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
 
             if resp.status_code == 402:
                 challenge = _parse_payment_challenge(resp.headers.get("WWW-Authenticate", ""))
-                return PieceProbe(status="paid", size_bytes=size, price=Decimal(challenge["price_usdfc"]), payee=challenge.get("payee_0x"))
+                price = Decimal(challenge["price_usdfc"])
+
+                if not price.is_finite() or price < 0:
+                    raise ValueError(f"invalid quoted price {challenge['price_usdfc']!r}")
+
+                return PieceProbe(status="paid", size_bytes=size, price=price, payee=challenge.get("payee_0x"))
 
             if resp.status_code == 403:
                 return PieceProbe(status="private", detail="403 Forbidden")
 
             return PieceProbe(status="unavailable", detail=f"HTTP {resp.status_code}")
 
-    except (requests.RequestException, ValueError, KeyError) as e:
+    # any malformed SP response (bad header, JSON, number, ...) makes the source unavailable rather than crashing the CLI
+    except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, ArithmeticError) as e:
         return PieceProbe(status="unavailable", detail=str(e))
 
 
