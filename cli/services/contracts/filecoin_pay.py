@@ -153,6 +153,14 @@ class FileCoinPay(ContractService):
             signer
         )
 
+    # @notice Deposits tokens from the message sender into the `to` account (requires prior ERC20 approval).
+    #     Unlike the permit variants, `to` may differ from the sender, so it can fund a third-party account.
+    # @param token The ERC20 token address to deposit.
+    # @param to The address whose account will be credited.
+    # @param amount The amount of tokens to deposit.
+    def deposit(self, token: EthAddress, to: EthAddress, amount: int, signer: TxSigner) -> TxInfo:
+        return self.sign_and_send_tx(self.contract.functions.deposit(token, to, amount), signer)
+
     # @notice Deposits tokens using permit (EIP-2612) approval in a single transaction.
     # @param token The ERC20 token address to deposit.
     # @param to The address whose account will be credited (must be the permit signer).
@@ -171,6 +179,14 @@ class FileCoinPay(ContractService):
             self.contract.functions.depositWithPermit(token, to, amount, deadline, v, r, s),
             signer
         )
+
+    # @notice Sums DepositRecorded amounts of `token` deposited by `from_address` into the `to_address` account
+    #     within the inclusive block range.
+    def get_deposited_amount(self, token: EthAddress, from_address: EthAddress, to_address: EthAddress, from_block: int, to_block: int) -> int:
+        # filter only by token on-chain: some RPC providers hang on eth_getLogs with all indexed topics set
+        logs = self.contract.events.DepositRecorded().get_logs(from_block=from_block, to_block=to_block, argument_filters={"token": token})
+        return sum(int(log.args.amount) for log in logs
+                   if EthAddress(log.args["from"]) == from_address and EthAddress(log.args["to"]) == to_address)
 
     # token => client => operator => Approval
     def get_operator_approval(self, token: EthAddress, client: EthAddress, operator: EthAddress) -> FileCoinPayOperatorApproval:
