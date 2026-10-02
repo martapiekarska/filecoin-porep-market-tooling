@@ -17,6 +17,7 @@ from cli.commands.repair_utils import (
     repair_payment_token,
     resolve_repair_payee,
 )
+from cli.commands.sp.claim_allocations import claim_allocations as claim_allocations_command
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -233,9 +234,8 @@ def _download_with_lpr(ctx,
 
     if claim_allocations:
         for piece, output_file in downloaded:
-            subprocess.run([sys.executable, sys.argv[0], "sp", "claim-allocations", claim_allocations, str(deal.deal.deal_id),
-                            "--cars-dir", str(output_file.parent),
-                            "--cid", piece["pieceCid"]], check=True)
+            ctx.invoke(claim_allocations_command, software=claim_allocations, deal_id=deal.deal.deal_id,
+                       cars_dir=str(output_file.parent), cid=piece["pieceCid"])
 
 
 def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -> Path:
