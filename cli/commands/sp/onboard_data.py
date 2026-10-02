@@ -83,9 +83,9 @@ def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir:
     with open(aria2_file, "w", encoding="utf-8") as f:
         for piece in pieces:
             output_file = _resolve_piece_output_file(piece, output_dir)
-            piece_name = piece["storagePath"].removesuffix(".car")
 
-            download_url = f"{download_host}/piece/{piece_name}"
+            # request by piece CID, like retrieval-client; storagePath is only the local file name
+            download_url = f"{download_host}/piece/{piece['pieceCid']}"
 
             f.write(f"{download_url}\n")
             f.write(f"  out={output_file.name}\n")
