@@ -4,8 +4,7 @@ import json
 import logging
 import os
 import re
-from decimal import Decimal, InvalidOperation
-from math import ceil
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 
 import click
@@ -38,6 +37,9 @@ _MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("d
 
 # /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
 _HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
+
+
+AMOUNT_PRECISION = 100  # significant digits for repair price arithmetic; uint256 has at most 78
 
 
 # Repair prices are parsed from the user's text as Decimal, never as binary floats
@@ -259,7 +261,9 @@ def probe_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | N
                 return None, f"piece {piece['pieceCid']}: paid but size unknown"
 
             # LPR sp-proxy price = price per GiB * GiB rounded up
-            prices_per_gib.add(probe.price / ceil(probe.size_bytes / GIB_BYTES))
+            with localcontext() as ctx:
+                ctx.prec = AMOUNT_PRECISION
+                prices_per_gib.add(probe.price / -(-int(probe.size_bytes) // GIB_BYTES))
         else:
             prices_per_gib.add(Decimal(0))
 
@@ -384,7 +388,8 @@ def load_manifest_json(manifest_input: str) -> object:
 
 def _padded_piece_size(file_size: int) -> int:
     # smallest power of two holding the FR32-expanded CAR (127 data bytes per 128-byte chunk)
-    return 1 << max(7, ceil(file_size * 128 / 127) - 1).bit_length()
+    # next power of two, at least the 128-byte minimum piece
+    return max(128, 1 << (-(-file_size * 128 // 127) - 1).bit_length())
 
 
 # Converts a data-prep-standard super-manifest whose contents are the pieces' CAR files (as served by toads.directory)

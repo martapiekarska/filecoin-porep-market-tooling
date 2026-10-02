@@ -1,12 +1,11 @@
-from decimal import Decimal
-from math import ceil
+from decimal import ROUND_CEILING, Decimal, localcontext
 
 import click
 
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
-from cli.commands.repair_utils import GIB_BYTES, RetrievalSource, find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import AMOUNT_PRECISION, GIB_BYTES, RetrievalSource, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
@@ -32,16 +31,25 @@ MIN_LOGS_BLOCK_RANGE = 50
 # Mirrors large-paid-retrievals sp-proxy pricing (README "Pricing"): each piece is billed per binary GiB, rounded up.
 # The price per GiB is read from the healthy SP's quotes; sizes come from the manifest fileSize (checked against the SP).
 def estimate_retrieval_cost(pieces: list[dict], price_per_gib_wei: int) -> int:
-    return sum(ceil((piece.get("fileSize") or piece["pieceSize"]) / GIB_BYTES) * price_per_gib_wei for piece in pieces)
+    without_file_size = [piece["pieceCid"] for piece in pieces if not piece.get("fileSize")]
+
+    if without_file_size:
+        click.echo(f"WARNING: {len(without_file_size)} piece(s) have no fileSize; their padded pieceSize is used, which overestimates "
+                   f"their cost: {', '.join(without_file_size[:3])}{'...' if len(without_file_size) > 3 else ''}")
+
+    return sum(-(-(piece.get("fileSize") or piece["pieceSize"]) // GIB_BYTES) * price_per_gib_wei for piece in pieces)
 
 
+# a price per GiB derived from quotes may not be a whole number of base units; it is rounded up, never down
 def price_to_wei(price: Decimal, decimals: int) -> int:
-    result = Decimal(str(price)) * (10 ** decimals)
+    with localcontext() as ctx:
+        ctx.prec = AMOUNT_PRECISION
+        result = int(price.scaleb(decimals).to_integral_value(rounding=ROUND_CEILING))
 
-    if result != int(result):
-        raise click.BadParameter(f"Price {price} has more precision than the token's {decimals} decimals")
+    if result != price.scaleb(decimals):
+        click.echo(f"Note: price {price}/GiB is not a whole number of base units; rounded up to {utils.str_from_wei(result, decimals)}/GiB")
 
-    return int(result)
+    return result
 
 
 def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
@@ -235,6 +243,7 @@ def pay_repair_retrieval(deal_id: int,
     click.echo(f"\nRepair retrieval for deal ID {deal_id} (provider {deal.deal.provider_id}):\n"
                f"  Manifest: {deal.data.manifest_location}\n"
                f"  Pieces: {len(pieces)}, billed per GiB rounded up per piece at {price_per_gib} {token_symbol}/GiB{source_str}\n"
+               f"  (estimate: assumes every piece is priced like the sampled ones)\n"
                f"  Estimated retrieval cost: {cost_str} {token_symbol}\n"
                f"  New SP retrieval wallet (deal payee): {retrieval_wallet}\n"
                f"  Client token balance: {token_balance_str} {token_symbol}")
