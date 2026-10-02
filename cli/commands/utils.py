@@ -23,7 +23,7 @@ from cli.services.contracts.porep_market import (
     PoRepMarketDeal,
     PoRepMarketDealState, PoRepMarketDealType, PoRepMarketDealRequest, PoRepMarketSLIThresholds,
 )
-from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
+from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
 from cli.services.contracts.sp_registry import SPRegistry, SPRegistryProviderInput, SPRegistryProviderView, SPRegistryOfferInput
 from cli.services.contracts.validator_factory import ValidatorFactory
 from cli.services.txsigner import TxSigner
@@ -553,6 +553,11 @@ def hash_manifest(raw_manifest: bytes) -> HexBytes:
     return Web3.keccak(text=raw_manifest.decode("utf-8"))
 
 
+# The contract bills whole 32 GiB units (PoRepMarketDealPayment.billed_32_gib_units), i.e. the size rounded up
+def billed_32_gib_units(size_bytes: int, sector_size_bytes: int) -> int:
+    return -(-size_bytes // sector_size_bytes)
+
+
 def calculate_deposit_amount(size_bytes: int,
                              price_per_sector_per_month: int,
                              sector_size_bytes: int,
@@ -561,15 +566,20 @@ def calculate_deposit_amount(size_bytes: int,
     if deposit_for_months <= 0:
         raise ValueError(f"Invalid deposit months: {deposit_for_months}")
 
-    # integer maths: size / sector size * price * months, rounded up to a whole base unit
-    result, remainder = divmod(size_bytes * price_per_sector_per_month * deposit_for_months, sector_size_bytes)
+    return billed_32_gib_units(size_bytes, sector_size_bytes) * price_per_sector_per_month * deposit_for_months
 
-    if remainder:
-        utils.confirm(f"Calculated deposit amount {result} base units has a fractional part; rounding up to {result + 1}. Continue?",
-                      default=True, abort=True, session_id="calculated-deposit-amount")
-        result += 1
 
-    return result
+# Deposit for an existing deal: what its payment rail streams, i.e. the contract's (rounded up) rate per epoch for each
+# epoch of the month; falls back to whole billed units * price before the contract has set a rate
+def deal_deposit_amount(deal: PoRepMarketDealView, months: int = 1) -> int:
+    if months <= 0:
+        raise ValueError(f"Invalid deposit months: {months}")
+
+    if deal.payment.rail_max_rate_per_epoch:
+        return deal.payment.rail_max_rate_per_epoch * PoRepMarket().get_epochs_in_month() * months
+
+    units = deal.payment.billed_32_gib_units or billed_32_gib_units(deal.terms.requested_size_bytes, PoRepMarket().get_sector_size_bytes())
+    return units * deal.payment.price_per_32_gib_per_month * months
 
 
 def propose_deal(signer: TxSigner,

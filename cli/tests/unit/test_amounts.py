@@ -70,6 +70,27 @@ def test_deposit_amount_uses_integer_maths():
     assert commands_utils.calculate_deposit_amount(3 * SECTOR, price, SECTOR, 2) == 3 * price * 2
 
 
-def test_deposit_amount_rounds_a_fractional_base_unit_up(monkeypatch):
-    monkeypatch.setattr(utils, "confirm", lambda *args, **kwargs: True)
-    assert commands_utils.calculate_deposit_amount(SECTOR // 2, 3, SECTOR, 1) == 2  # 1.5 -> 2
+def test_deposit_amount_bills_whole_32_gib_units():
+    # mainnet deal 2: 853.001 units of data, billed by the contract as 854
+    size = 853 * SECTOR + 34_359_738
+    assert commands_utils.billed_32_gib_units(size, SECTOR) == 854
+    assert commands_utils.calculate_deposit_amount(size, 125 * 10 ** 15, SECTOR) == 854 * 125 * 10 ** 15
+
+
+def _deal(rate: int, billed: int, price: int, size: int):
+    from types import SimpleNamespace
+    return SimpleNamespace(payment=SimpleNamespace(rail_max_rate_per_epoch=rate, billed_32_gib_units=billed, price_per_32_gib_per_month=price),
+                           terms=SimpleNamespace(requested_size_bytes=size))
+
+
+def test_deal_deposit_matches_what_the_rail_streams(monkeypatch):
+    monkeypatch.setattr(commands_utils, "PoRepMarket", lambda: type("M", (), {"get_epochs_in_month": lambda self: 86_400})())
+    # mainnet deal 2: the contract rounds the rate per epoch up, so the rail streams slightly more than units * price
+    deal = _deal(rate=1_235_532_407_407_408, billed=854, price=125 * 10 ** 15, size=853 * SECTOR + 1)
+    assert commands_utils.deal_deposit_amount(deal, 2) == 1_235_532_407_407_408 * 86_400 * 2
+    assert commands_utils.deal_deposit_amount(deal) - 854 * 125 * 10 ** 15 == 51_200
+
+
+def test_deal_deposit_falls_back_to_billed_units_before_a_rate_is_set(monkeypatch):
+    monkeypatch.setattr(commands_utils, "PoRepMarket", lambda: type("M", (), {"get_sector_size_bytes": lambda self: SECTOR})())
+    assert commands_utils.deal_deposit_amount(_deal(rate=0, billed=0, price=7, size=2 * SECTOR + 1), 3) == 3 * 7 * 3

@@ -8,7 +8,7 @@ from cli.commands.client import _utils as client_utils
 from cli.commands.client._client import client_address, client_signer
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.filecoinpay_validator import FileCoinPayValidator
-from cli.services.contracts.porep_market import PoRepMarketDeal, PoRepMarketDealState, PoRepMarket
+from cli.services.contracts.porep_market import PoRepMarketDeal, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.contracts.usdc_token import USDCToken
 from cli.services.contracts.validator_factory import ValidatorFactory
@@ -101,9 +101,7 @@ def _deposit_and_approve_operator(deal_id: int):
     token_balance = payment_token.balance_of(client_address())
     token_balance_str = utils.str_from_wei(token_balance, token_decimals)
 
-    deposit_amount = commands_utils.calculate_deposit_amount(deal.terms.requested_size_bytes,
-                                                             deal.payment.price_per_32_gib_per_month,
-                                                             PoRepMarket().get_sector_size_bytes())
+    deposit_amount = commands_utils.deal_deposit_amount(deal)
     deposit_amount_str = utils.str_from_wei(deposit_amount, token_decimals)
 
     if token_balance < deposit_amount:
