@@ -46,6 +46,11 @@ Run the script: `python3 ./porep_tooling_cli.py` and follow help prompts.
 
 ## Security considerations
 
+- **The admin key is the whole security boundary.** Admin-only operations are enforced by the contracts, so whoever holds
+  the admin role can propose deals for any client, terminate or finalize deals, change market and payment-token
+  settings, block providers and upgrade the contract implementations. Hold the admin role in a multisig or
+  hardware-backed wallet, never as a raw key on a workstation, and consider separate roles for routine operations and
+  for upgrades.
 - All blockchain transactions **require manual user confirmation** before sending. There is no option to override this. \
   If you decline the final confirmation, the command falls back to dry-run behavior without broadcasting the transaction.
 - The app runs locally and does not transmit any data to external servers besides blockchain.

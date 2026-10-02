@@ -659,7 +659,7 @@ def propose_deal(signer: TxSigner,
     total_max_cost = max_cost_per_month * deal_duration_months
     total_max_cost_str = utils.str_from_wei(total_max_cost, payment_token_decimals)
     against_offer_str = f" against offer ID {offer_id}" if offer_id else ""
-    against_offer_warn = "The admin account becomes the client of the resulting deal. " if offer_id else ""
+    against_offer_warn = f"The client of the resulting deal will be {client_address}. " if offer_id else ""
 
     utils.confirm(f"\nProposing deal{against_offer_str}: {utils.json_pretty(deal_request)}\n\n"
                   f"This will cost you maximum of {max_cost_per_month_str} {payment_token_symbol} per month. "

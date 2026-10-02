@@ -63,7 +63,8 @@ def propose_deal_for_offer(offer_id: int,
     3. prepare and confirm deal proposal details,
     4. propose deal on-chain via PoRep Market contract, reserving OFFER_ID.
 
-    Note: the admin account becomes the client of the resulting deal.
+    Note: --client-address becomes the client of the resulting deal; the admin account only signs the proposal.
+    The client still has to fund the deal itself (`client init-deal`).
 
     \b
     OFFER_ID - The ID of the Storage Provider offer to reserve for the deal.
