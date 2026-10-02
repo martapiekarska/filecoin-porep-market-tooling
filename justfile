@@ -30,10 +30,13 @@ install-hooks:
 lint: pylint flake8 ruff
     @echo "All linters passed."
 
+test-unit:
+    python3 -m pytest
+
 test-sh:
     chmod +x cli/tests/test.sh && cli/tests/test.sh
 
-check: secrets lint test-sh
+check: secrets lint test-unit test-sh
     @echo "All checks passed."
 
 pre-push: check
