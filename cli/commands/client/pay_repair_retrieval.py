@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 import click
 
 from cli.commands.client import _repair
+from cli.commands.repair_utils import DecimalAmount
 from cli.services.self_update import SelfUpdateService
 
 
@@ -12,14 +15,14 @@ from cli.services.self_update import SelfUpdateService
 @click.option("--source-url",
               help="Override: base URL of the healthy SP's piece server / sp-proxy (e.g. https://sp.example.com:8787).  "
                    "[default: auto-detected from other providers' deals for the same dataset]")
-@click.option("--price-per-gib", type=click.FloatRange(min=0, min_open=True),
+@click.option("--price-per-gib", type=DecimalAmount(min_open=True),
               help="Override: retrieval price in decimal tokens per GiB.  [default: quoted by the healthy SP]")
 @click.option("--token", "token_address",
               help="ERC20 token the healthy SP's sp-proxy charges in (USDFC).  [default: DEAL_ID payment token]")
 def pay_repair_retrieval(deal_id: int,
                          repair_of: int | None = None,
                          source_url: str | None = None,
-                         price_per_gib: float | None = None,
+                         price_per_gib: Decimal | None = None,
                          token_address: str | None = None):
     """
     One-off payment of a repair retrieval for a new SP.

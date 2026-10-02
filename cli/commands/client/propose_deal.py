@@ -1,4 +1,5 @@
 import sys
+from decimal import Decimal
 
 import click
 
@@ -6,7 +7,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _repair
 from cli.commands.client._client import client_signer
-from cli.commands.repair_utils import find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import DecimalAmount, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.porep_market import PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -52,7 +53,7 @@ from cli.services.web3_service import EthAddress
 @click.option("--repair-source-url",
               help="With --repair, override: base URL of the healthy SP's piece server / sp-proxy "
                    "[default: auto-detected from other providers' deals for the same dataset]. Required with --repair-legacy.")
-@click.option("--repair-price-per-gib", type=click.FloatRange(min=0, min_open=True),
+@click.option("--repair-price-per-gib", type=DecimalAmount(min_open=True),
               help="With --repair / --repair-legacy, override: retrieval price in decimal --payment-token tokens per GiB.  "
                    "[default: quoted by the healthy SP]")
 def propose_deal(manifest_url: str,
@@ -68,7 +69,7 @@ def propose_deal(manifest_url: str,
                  repair_of: int | None = None,
                  repair_legacy: bool = False,
                  repair_source_url: str | None = None,
-                 repair_price_per_gib: float | None = None):
+                 repair_price_per_gib: Decimal | None = None):
     """
     Interactively propose a deal from MANIFEST_URL with the specified parameters.
 

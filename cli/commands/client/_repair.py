@@ -36,7 +36,7 @@ def estimate_retrieval_cost(pieces: list[dict], price_per_gib_wei: int) -> int:
     return sum(ceil((piece.get("fileSize") or piece["pieceSize"]) / GIB_BYTES) * price_per_gib_wei for piece in pieces)
 
 
-def price_to_wei(price: float | Decimal, decimals: int) -> int:
+def price_to_wei(price: Decimal, decimals: int) -> int:
     result = Decimal(str(price)) * (10 ** decimals)
 
     if result != int(result):
@@ -125,7 +125,7 @@ def ensure_repairable(deal: PoRepMarketDealView):
 def pay_repair_retrieval(deal_id: int,
                          repair_of_deal_id: int | None = None,
                          source_url: str | None = None,
-                         price_per_gib: float | None = None,
+                         price_per_gib: Decimal | None = None,
                          token_address: str | None = None,
                          source: RetrievalSource | None = None):
     #

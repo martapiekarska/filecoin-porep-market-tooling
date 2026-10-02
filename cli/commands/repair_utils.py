@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from math import ceil
 from pathlib import Path
 
@@ -38,6 +38,32 @@ _MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("d
 
 # /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
 _HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
+
+
+# Repair prices are parsed from the user's text as Decimal, never as binary floats
+class DecimalAmount(click.ParamType):
+    name = "decimal"
+
+    def __init__(self, min_value: Decimal | int = 0, min_open: bool = False):
+        self.min_value = Decimal(min_value)
+        self.min_open = min_open
+
+    def convert(self, value, param, ctx) -> Decimal:
+        if isinstance(value, Decimal):
+            result = value
+        else:
+            try:
+                result = Decimal(str(value).strip())
+            except InvalidOperation:
+                self.fail(f"{value!r} is not a decimal number", param, ctx)
+
+        if not result.is_finite():
+            self.fail(f"{value!r} is not a finite number", param, ctx)
+
+        if result < self.min_value or (self.min_open and result == self.min_value):
+            self.fail(f"{value} is not {'>' if self.min_open else '>='} {self.min_value}", param, ctx)
+
+        return result
 
 
 # Like SSH does for private key files: a file holding a secret must be owned by the current user and not be accessible
