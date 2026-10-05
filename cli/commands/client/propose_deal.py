@@ -1,13 +1,8 @@
-import sys
-
 import click
 
 from cli.commands import utils as commands_utils
-from cli.commands.client import _repair
 from cli.commands.client._client import client_signer
-from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.porep_market import PoRepMarketDealType
-from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.contracts.usdc_token import USDCToken
 from cli.services.self_update import SelfUpdateService
 from cli.services.web3_service import EthAddress
@@ -40,12 +35,6 @@ from cli.services.web3_service import EthAddress
 @click.option("--indexing-pct", type=click.IntRange(0, 100), required=True,
               prompt="Enter IPNI indexing guarantee in percentage; 0 means \"don't care\"",
               help="IPNI indexing guarantee in percentage; 0 means \"don't care\".")
-@click.option("--repair-legacy", is_flag=True, default=False,
-              help="Legacy (v1) repair: also pay the one-off retrieval of the data from --repair-source-url, which must match the "
-                   "source embedded in MANIFEST_URL (see `client prepare-legacy-repair`), once the matched SP accepts the deal. "
-                   "To repair a v2 deal, use `client repair`.  [default: false]")
-@click.option("--repair-source-url",
-              help="With --repair-legacy: base URL of the healthy SP's piece server / sp-proxy.")
 def propose_deal(manifest_url: str,
                  retrievability_pct: int,
                  bandwidth_mbps: int,
@@ -54,77 +43,30 @@ def propose_deal(manifest_url: str,
                  latency_ms: int,
                  indexing_pct: int,
                  payment_token: str,
-                 deal_type: str,
-                 repair_legacy: bool = False,
-                 repair_source_url: str | None = None):
+                 deal_type: str):
     """
     Interactively propose a deal from MANIFEST_URL with the specified parameters.
 
     \b
     1. Fetch and validate manifest from a given MANIFEST_URL,
-    2. with --repair-legacy: check the given source serves the data and get its exact retrieval quote,
-    3. prepare and confirm deal proposal details,
-    4. propose deal on-chain via PoRep Market contract (the SP is matched as for any other deal),
-    5. with --repair-legacy: once the matched SP has accepted the deal, deposit the one-off retrieval cost into
-       the FileCoinPay account of its payee (see `client pay-repair-retrieval`, which also does this later if the
-       deal is not accepted yet).
+    2. prepare and confirm deal proposal details,
+    3. propose deal on-chain via PoRep Market contract.
 
     MANIFEST_URL - URL of the deal manifest file to use.
     """
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    source = None
-
-    if repair_legacy:
-        if repair_source_url is None:
-            raise click.UsageError("--repair-legacy requires --repair-source-url")
-
-        ensure_usdfc(EthAddress.from_any(payment_token), "The proposed deal")
-        manifest, _ = commands_utils.fetch_manifest(manifest_url, show_manifest=False, quiet=True)
-
-        # the new SP fetches from the source embedded in the deal manifest, so it must be the one the client checks and pays for
-        if get_manifest_repair_source(manifest) != repair_source_url.rstrip("/"):
-            raise click.ClickException(f"Manifest at {manifest_url} has repair source {get_manifest_repair_source(manifest)!r}, "
-                                       f"not {repair_source_url!r}; prepare it with `{sys.argv[0]} client prepare-legacy-repair`.")
-
-        source = find_healthy_source(b"", manifest[0]["pieces"], set(), repair_source_url)
-        _echo_repair_cost(source)
-
-    elif repair_source_url is not None:
-        raise click.UsageError("--repair-source-url: only valid with --repair-legacy")
-
-    deal_id = commands_utils.propose_deal(client_signer(),
-                                          manifest_url,
-                                          retrievability_pct,
-                                          bandwidth_mbps,
-                                          price_per_tib_per_month,
-                                          duration_months,
-                                          latency_ms,
-                                          indexing_pct,
-                                          EthAddress.from_any(payment_token),
-                                          PoRepMarketDealType.from_web3(deal_type))
-
-    if repair_legacy:
-        retry_command = f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'} --source-url {repair_source_url}`"
-
-        # e.g. the proposal ran as dry run after declining the final confirmation
-        if deal_id is None:
-            click.echo(f"\nNo deal created; repair retrieval not paid. Once the deal exists, pay it with {retry_command}")
-            return
-
-        if PoRepMarketViewHelper().get_deal_view(deal_id).deal.state not in _repair.PAYABLE_DEAL_STATES:
-            click.echo(f"\nDeal ID {deal_id} is not accepted yet. The repair deposit goes straight to the SP's payee and can only be "
-                       f"returned by the SP, so it is made once the SP accepts the deal: then run {retry_command}")
-            return
-
-        click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
-        _repair.pay_repair_retrieval(deal_id, source_url=repair_source_url, source=source)
-
-
-def _echo_repair_cost(source: RetrievalSource):
-    click.echo(f"\nOne-off repair retrieval cost quoted by {source.base_url}, paid once the matched SP accepts the deal: "
-               f"{source.quote.total} USDFC for {source.quote.paid_pieces} paid piece(s)\n")
+    commands_utils.propose_deal(client_signer(),
+                                manifest_url,
+                                retrievability_pct,
+                                bandwidth_mbps,
+                                price_per_tib_per_month,
+                                duration_months,
+                                latency_ms,
+                                indexing_pct,
+                                EthAddress.from_any(payment_token),
+                                PoRepMarketDealType.from_web3(deal_type))
 
 
 @click.command(hidden=True)

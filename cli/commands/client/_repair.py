@@ -7,7 +7,6 @@ from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_st
 from cli.commands.repair_utils import (
     RetrievalSource,
     find_healthy_source,
-    get_manifest_repair_source,
     repair_payment_token,
     resolve_repair_payee,
 )
@@ -26,10 +25,10 @@ from cli.services.web3_service import EthAddress, Web3Service
 # the payee is the SP wallet already recorded on-chain for the deal, and the LPR retrieval-client (run by the new SP
 # with the payee key) spends available FileCoinPay funds before touching the wallet. So the new SP never fronts the
 # retrieval cost, the client's exposure is capped at the deposited amount, and no keys or addresses are exchanged.
-# The healthy SP and its price are found automatically (see repair_utils.find_healthy_source), or come from a legacy
-# repair manifest's embedded source. The deposit is only made once the SP has accepted the deal, and fails closed when
-# earlier deposits can't be checked (see _check_previous_deposits). The deposit is also the SP's go-signal: `sp onboard-data`
-# only starts a paid download once the deposits the payee has not yet spent cover the quote (see repair_funding).
+# The healthy SP and its price are found automatically (see repair_utils.find_healthy_source). The deposit is only made
+# once the SP has accepted the deal, and fails closed when earlier deposits can't be checked (see _check_previous_deposits).
+# The deposit is also the SP's go-signal: `sp onboard-data` only starts a paid download once the deposits the payee has
+# not yet spent cover the quote (see repair_funding).
 
 
 def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
@@ -140,13 +139,6 @@ def pay_repair_retrieval(deal_id: int,
 
     manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
     pieces = manifest[0]["pieces"]
-
-    # legacy repair: the new SP fetches from the source embedded in the deal manifest, so price that one
-    embedded_source = get_manifest_repair_source(manifest)
-    if embedded_source:
-        if source_url and source_url.rstrip("/") != embedded_source:
-            raise click.ClickException(f"Deal ID {deal_id} manifest repair source is {embedded_source}, not {source_url}")
-        source_url = embedded_source
 
     # a source found before proposing is only reusable if the deal did not land with that same SP
     if source is None or source.provider_id == deal.deal.provider_id:

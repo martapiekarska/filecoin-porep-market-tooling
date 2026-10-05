@@ -164,10 +164,6 @@ def test_auto_downloader_probes_the_urls_aria2_would_fetch(monkeypatch, statuses
 
     monkeypatch.setattr(od, "probe_piece", fake_probe)
     pieces = [piece(name) for name in ("p1", "p2", "p3", "p4")]
-    assert od._choose_downloader(pieces, "http://client.example:7777", False) == expected
+    assert od._choose_downloader(pieces, "http://client.example:7777") == expected
     assert probed == [("http://client.example:7777", f"p{i}") for i in range(1, len(statuses) + 1)]
 
-
-def test_auto_downloader_uses_retrieval_client_for_legacy_repairs(monkeypatch):
-    monkeypatch.setattr(od, "probe_piece", lambda *args: pytest.fail("legacy repair sources are not probed"))
-    assert od._choose_downloader([piece("p1")], "https://source.example", True) == "lpr"

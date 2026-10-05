@@ -7,15 +7,6 @@ from cli.commands import repair_funding, repair_utils
 GIB = 2 ** 30
 
 
-@pytest.mark.parametrize("file_size, padded", [
-    (13, 128), (127, 128), (128, 256),  # 128-byte minimum piece, FR32 expansion of 127 bytes per 128
-    (18_801_996, 33_554_432), (32_849_050_527, 34_359_738_368),  # RarePlanes dag and data pieces, checked against on-chain claims
-    (34_091_302_912, 34_359_738_368), (34_091_302_913, 68_719_476_736),  # exactly 32 GiB of FR32 capacity, and one byte more
-])
-def test_padded_piece_size(file_size, padded):
-    assert repair_utils._padded_piece_size(file_size) == padded
-
-
 @pytest.mark.parametrize("amount, decimals, expected", [
     (Decimal("1.26"), 18, 1_260_000_000_000_000_000),
     (Decimal("0.0000001"), 6, 1),  # finer than the token's decimals: rounded up, never down
