@@ -275,8 +275,9 @@ is separate from and in addition to the regular deal payment rail (`client init-
 
    The CLI finds the healthy SP itself (`--host` / `--port` override it), and checks that the key belongs to the
    deal's payee before downloading. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
-   Filecoin Pay gas. `retrieval-client` gets the CLI's `RPC_URL`, `FILECOIN_PAY` and the deal's payment token, so it
-   spends from the same FileCoinPay account the client funded. In `tools/sp-pipeline.sh`, set
+   Filecoin Pay gas. `retrieval-client` gets the CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same
+   FileCoinPay account the client funded, in USDFC. Works with `retrieval-client` built from LPR `main` or
+   `v1-maintenance`. In `tools/sp-pipeline.sh`, set
    `ONBOARD_DATA_DOWNLOADER="lpr"` and `PAYEE_KEY_FILE`.
 
 ### Legacy (v1) repair with a manually chosen source
@@ -320,6 +321,10 @@ client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only 
 
 Limitations:
 
+- Only deals paid in **USDFC** can be repaired: LPR `sp-proxy`s settle retrievals in USDFC, and the client's deposit and the
+  new SP's retrieval use the deal's payment token. `propose-deal --repair` and `pay-repair-retrieval` refuse other
+  tokens. USDFC is the chain's known USDFC address, or `SP_PROXY_PAY_TOKEN_ADDRESS` on local devnets (the same variable
+  `retrieval-client` reads).
 - LPR currently lets only the deal owner retrieve **private** deals, so only **public** deals can be repaired. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.
 - Health is judged from on-chain deal state, claims and a live probe of sample pieces. The CLI does not check sector

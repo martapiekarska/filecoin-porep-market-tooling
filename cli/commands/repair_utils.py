@@ -385,8 +385,43 @@ def resolve_repair_payee(deal: PoRepMarketDealView) -> EthAddress:
     return EthAddress(payee)
 
 
+# Repair retrievals are paid in USDFC: an LPR sp-proxy only credits Filecoin Pay rails in its own payment token, the chain's
+# USDFC. Same lookup as LPR retrieval-client: the SP_PROXY_PAY_TOKEN_ADDRESS override (needed on local devnets), else the
+# chain's known USDFC address (go-synapse constants). retrieval-client inherits the same variable from the environment.
+USDFC_ADDRESSES_BY_CHAIN_ID = {
+    314: "0x80B98d3aa09ffff255c3ba4A241111Ff1262F045",  # mainnet
+    314159: "0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0",  # calibration
+}
+
+
+def usdfc_token() -> EthAddress:
+    override = utils.get_env("SP_PROXY_PAY_TOKEN_ADDRESS")
+
+    if override:
+        # f410/t410 overrides need the conversion; plain 0x addresses don't (and need no RPC call)
+        return EthAddress(override) if override.startswith("0x") else EthAddress.from_any(override)
+
+    chain_id = Web3Service().get_chain_id()
+
+    if chain_id not in USDFC_ADDRESSES_BY_CHAIN_ID:
+        raise click.ClickException(f"Unknown USDFC token for chain ID {chain_id}; set SP_PROXY_PAY_TOKEN_ADDRESS")
+
+    return EthAddress(USDFC_ADDRESSES_BY_CHAIN_ID[chain_id])
+
+
+# The client's deposit and the new SP's retrieval both use the deal's payment token, so only USDFC deals can be repaired
+def ensure_usdfc(token: EthAddress, subject: str):
+    usdfc = usdfc_token()
+
+    if EthAddress(token) != usdfc:
+        raise click.ClickException(f"{subject} pays in token {token}, not USDFC ({usdfc}). Repair retrievals are paid in USDFC, "
+                                   f"the token large-paid-retrievals sp-proxies settle in, so only USDFC deals can be repaired.")
+
+
 def repair_payment_token(deal: PoRepMarketDealView) -> EthAddress:
-    return EthAddress(deal.payment.payment_token)
+    token = EthAddress(deal.payment.payment_token)
+    ensure_usdfc(token, f"Deal ID {deal.deal.deal_id}")
+    return token
 
 
 # Legacy (v1) repair: the client supplies the original manifest and the healthy source; the source is embedded in the

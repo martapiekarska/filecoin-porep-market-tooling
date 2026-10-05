@@ -7,7 +7,7 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _repair
 from cli.commands.client._client import client_signer
-from cli.commands.repair_utils import DecimalAmount, find_healthy_source, get_manifest_repair_source
+from cli.commands.repair_utils import DecimalAmount, ensure_usdfc, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.porep_market import PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -96,6 +96,9 @@ def propose_deal(manifest_url: str,
 
     if repair and repair_legacy:
         raise click.UsageError("Use either --repair or --repair-legacy, not both")
+
+    if repair or repair_legacy:
+        ensure_usdfc(EthAddress.from_any(payment_token), "The proposed deal")
 
     if repair_legacy:
         if repair_source_url is None:

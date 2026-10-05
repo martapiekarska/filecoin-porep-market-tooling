@@ -6,12 +6,21 @@ import click
 
 od = importlib.import_module("cli.commands.sp.onboard_data")
 
+# `retrieval-client fetch` flags common to LPR main and v1-maintenance (v1-maintenance has no --pay-token-address)
+RETRIEVAL_CLIENT_FETCH_FLAGS = {f"--{flag}" for flag in (
+    "cid", "cid-file", "dry-run", "expires-in-sec", "filpay-private-key", "filpay-private-key-env", "filpay-private-key-file",
+    "manifest", "no-progress", "out-dir", "parallel", "pay-debug", "pay-payments-address", "pay-rpc-url", "sp-base-url",
+    "verbose", "yes")}
+
 
 def test_lpr_download_claims_allocations_in_process(tmp_path, monkeypatch):
     pieces = [{"pieceCid": "bagaA", "fileSize": 1, "pieceSize": 128, "storagePath": "bagaA.car"},
               {"pieceCid": "bagaB", "fileSize": 1, "pieceSize": 128, "storagePath": "sub/renamed.car"}]
 
+    commands = []
+
     def fake_run(command, **kwargs):  # retrieval-client stand-in: writes <cid>.car files into --out-dir
+        commands.append(command)
         out_dir = tmp_path / "out"
         for cid in Path(command[command.index("--cid-file") + 1]).read_text(encoding="utf-8").split():
             (out_dir / f"{cid}.car").write_text("car")
@@ -35,3 +44,7 @@ def test_lpr_download_claims_allocations_in_process(tmp_path, monkeypatch):
     assert (tmp_path / "out" / "sub" / "renamed.car").exists()
     assert [(c["software"], c["deal_id"], c["cid"], c["cars_dir"].endswith(d)) for c, d in zip(claims, ["out", "sub"])] == \
            [("boost", 7, "bagaA", True), ("boost", 7, "bagaB", True)]
+
+    # every flag passed must exist in all retrieval-client builds (LPR main and v1-maintenance)
+    passed = {arg for arg in commands[0] if arg.startswith("--")}
+    assert passed <= RETRIEVAL_CLIENT_FETCH_FLAGS, passed - RETRIEVAL_CLIENT_FETCH_FLAGS

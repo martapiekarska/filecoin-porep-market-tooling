@@ -192,6 +192,8 @@ def pay_repair_retrieval(deal_id: int,
     if repair_of_deal_id is not None:
         ensure_same_dataset(deal, repair_of_deal_id)
 
+    token = ERC20Contract(repair_payment_token(deal))  # refuses non-USDFC deals before anything is probed or paid
+
     manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
     pieces = manifest[0]["pieces"]
 
@@ -218,7 +220,6 @@ def pay_repair_retrieval(deal_id: int,
 
     payee = resolve_repair_payee(deal)
 
-    token = ERC20Contract(repair_payment_token(deal))
     token_decimals = token.decimals()
     token_symbol = token.symbol()
 

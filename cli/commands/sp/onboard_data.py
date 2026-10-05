@@ -199,11 +199,13 @@ def _download_with_lpr(ctx,
     cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
 
     try:
-        # pay through the same chain, FileCoinPay contract and token the client funded with `client pay-repair-retrieval`
+        # pay through the same chain and FileCoinPay contract the client funded with `client pay-repair-retrieval`. The token
+        # is USDFC (checked here): retrieval-client resolves it itself, from SP_PROXY_PAY_TOKEN_ADDRESS or the chain default.
+        # Only pass flags every retrieval-client build has: --pay-token-address is missing from LPR's v1-maintenance branch.
+        repair_payment_token(deal)
         defaults = {
             "--pay-rpc-url": utils.get_env_required("RPC_URL"),
             "--pay-payments-address": str(FileCoinPay().address()),
-            "--pay-token-address": str(repair_payment_token(deal)),
         }
 
         command = [retrieval_client_path, "fetch",
