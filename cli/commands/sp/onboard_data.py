@@ -10,16 +10,20 @@ import humanfriendly
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_str, get_repair_funding, tokens_to_base_units
 from cli.commands.repair_utils import (
+    SourceUnavailable,
     child_env,
     ensure_secret_file,
     find_healthy_source,
     get_manifest_repair_source,
     get_retrieval_client_path,
+    quote_retrieval,
     repair_payment_token,
     resolve_repair_payee,
 )
 from cli.commands.sp.claim_allocations import claim_allocations as claim_allocations_command
+from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
@@ -163,6 +167,65 @@ def _ensure_payee_key(deal, payee_key_file: str | None):
                                    f"the repair retrieval is funded in the deal payee's FileCoinPay account.")
 
 
+# The client's deposit is the go-signal and the spending cap for a paid repair download: quote what is left to download
+# right before fetching it, and only start once the client's deposits not yet spent by the payee cover that quote.
+def _ensure_repair_funded(deal, pieces: list[dict], download_host: str, allow_unfunded_retrieval: bool):
+    token = ERC20Contract(repair_payment_token(deal))
+
+    click.echo(f"\nQuoting {len(pieces)} piece(s) from {download_host}...")
+
+    try:
+        quote = quote_retrieval(download_host, [piece["pieceCid"] for piece in pieces])
+    except SourceUnavailable as e:
+        raise click.ClickException(f"Source {download_host} cannot serve the data: {e}") from e
+
+    if quote.paid_pieces == 0:
+        click.echo(f"All {quote.free_pieces} piece(s) are free; no client funding needed.")
+        return
+
+    token_decimals = token.decimals()
+    token_symbol = token.symbol()
+
+    def amount_str(amount: int) -> str:
+        return f"{base_units_str(amount, token_decimals)} {token_symbol}"
+
+    needed = tokens_to_base_units(quote.total, token_decimals)
+    payee = resolve_repair_payee(deal)
+    pay_command = f"`{sys.argv[0]} client pay-repair-retrieval {deal.deal.deal_id}`"
+
+    try:
+        funding = get_repair_funding(token.address(), deal.deal.client_address, payee, deal.deal.proposed_at_epoch)
+
+    except FundingHistoryUnavailable as e:
+        if not allow_unfunded_retrieval:
+            raise click.ClickException(f"Could not check the client's repair funding of {payee}: {e}\n"
+                                       f"Use an RPC_URL that serves logs back to epoch {deal.deal.proposed_at_epoch}, or re-run with "
+                                       f"--allow-unfunded-retrieval to download anyway; whatever the deposits don't cover is paid "
+                                       f"from the payee's own funds.") from e
+
+        click.echo(f"WARNING: client funding could not be checked ({e}); downloading anyway (--allow-unfunded-retrieval).")
+        return
+
+    click.echo(f"Repair retrieval quote: {amount_str(needed)} for {quote.paid_pieces} paid piece(s)\n"
+               f"  Client deposits to {payee} since the deal was proposed: {amount_str(funding.deposited)}\n"
+               f"  Spent by {payee} on retrievals since then: {amount_str(funding.spent)}\n"
+               f"  Available: {amount_str(funding.available)}")
+
+    if funding.available >= needed:
+        return
+
+    shortfall = needed - funding.available
+
+    if allow_unfunded_retrieval:
+        click.echo(f"WARNING: client funding is short by {amount_str(shortfall)}; downloading anyway (--allow-unfunded-retrieval), "
+                   f"so the rest is paid from the payee's own funds.")
+        return
+
+    raise click.ClickException(f"Waiting for client funding: quote {amount_str(needed)}, available {amount_str(funding.available)}, "
+                               f"short {amount_str(shortfall)}. The client funds it with {pay_command}; re-run this command "
+                               f"afterwards, or use --allow-unfunded-retrieval to pay the difference from the payee's own funds.")
+
+
 def _download_with_lpr(ctx,
                        deal,
                        pieces: list[dict],
@@ -170,17 +233,19 @@ def _download_with_lpr(ctx,
                        output_dir: Path,
                        no_summary: bool,
                        payee_key_file: str | None,
-                       claim_allocations: str | None):
+                       claim_allocations: str | None,
+                       allow_unfunded_retrieval: bool = False):
     #
     retrieval_client_path = get_retrieval_client_path()
     _ensure_payee_key(deal, payee_key_file)
+    _ensure_repair_funded(deal, pieces, download_host, allow_unfunded_retrieval)
     cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
 
     try:
         # pay through the same chain and FileCoinPay contract the client funded with `client pay-repair-retrieval`. The token
-        # is USDFC (checked here): retrieval-client resolves it itself, from SP_PROXY_PAY_TOKEN_ADDRESS or the chain default.
-        # Only pass flags every retrieval-client build has: --pay-token-address is missing from LPR's v1-maintenance branch.
-        repair_payment_token(deal)
+        # is USDFC (checked by _ensure_repair_funded): retrieval-client resolves it itself, from SP_PROXY_PAY_TOKEN_ADDRESS or
+        # the chain default. Only pass flags every retrieval-client build has: --pay-token-address is missing from LPR's
+        # v1-maintenance branch.
         defaults = {
             "--pay-rpc-url": utils.get_env_required("RPC_URL"),
             "--pay-payments-address": str(FileCoinPay().address()),
@@ -261,6 +326,9 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--payee-key-file", envvar="SP_PAYEE_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
               help="With --downloader lpr: file with the private key of the deal's payee address (`sp register-sp --payee-address`), "
                    "passed to retrieval-client.  [default: FILPAY_PRIVATE_KEY env var]")
+@click.option("--allow-unfunded-retrieval", is_flag=True, default=False,
+              help="With --downloader lpr: download even if the client's repair deposits don't cover the retrieval quote, or can't be "
+                   "checked; the payee's own funds pay the rest.  [default: false]")
 @click.pass_context
 # TODO LATER add commP files verification after download
 def onboard_data(ctx,
@@ -272,7 +340,8 @@ def onboard_data(ctx,
                  no_summary: bool = False,
                  claim_allocations: str | None = None,
                  downloader: str = "aria2",
-                 payee_key_file: str | None = None):
+                 payee_key_file: str | None = None,
+                 allow_unfunded_retrieval: bool = False):
     """
     \b
     Download data for a deal using aria2 downloader or large-paid-retrievals retrieval-client.
@@ -284,6 +353,8 @@ def onboard_data(ctx,
     \b
     With --downloader lpr the data is fetched (and paid for if needed) from a large-paid-retrievals sp-proxy,
     paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
+    Paid downloads only start once the client's deposits, less what the payee has spent on retrievals since
+    the deal was proposed, cover the source's quote for the pieces still to download.
     The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
     dataset whose piece endpoint serves the data), or --host:--port if given.
 
@@ -351,7 +422,7 @@ def onboard_data(ctx,
             download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
 
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
-                           no_summary, payee_key_file, claim_allocations)
+                           no_summary, payee_key_file, claim_allocations, allow_unfunded_retrieval)
         return
 
     if not aria2c_path:

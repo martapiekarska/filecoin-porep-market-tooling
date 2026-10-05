@@ -2,8 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from cli.commands import repair_utils
-from cli.commands.client import _repair
+from cli.commands import repair_funding, repair_utils
 
 GIB = 2 ** 30
 
@@ -23,7 +22,7 @@ def test_padded_piece_size(file_size, padded):
     (Decimal(0), 18, 0),
 ])
 def test_quote_to_base_units_rounds_up(amount, decimals, expected):
-    assert _repair.tokens_to_base_units(amount, decimals) == expected
+    assert repair_funding.tokens_to_base_units(amount, decimals) == expected
 
 
 class _Response:
@@ -84,3 +83,10 @@ def test_contract_payee_is_refused(monkeypatch):
     monkeypatch.setattr(repair_utils, "Web3Service", lambda: SimpleNamespace(w3=lambda: SimpleNamespace(eth=SimpleNamespace(get_code=lambda a: b"\x60\x80"))))
     with pytest.raises(click.ClickException, match="is a contract"):
         repair_utils.resolve_repair_payee(_deal_with_payee("0x1c6a2fd1dc31692929D26A227e684bF93D4F8Ecc"))
+
+
+@pytest.mark.parametrize("amount, decimals, expected", [
+    (1260000000000000000, 18, "1.26"), (0, 18, "0"), (10 ** 18, 18, "1"), (1, 18, "0.000000000000000001"), (123450, 6, "0.12345"),
+])
+def test_base_units_str_is_exact(amount, decimals, expected):
+    assert repair_funding.base_units_str(amount, decimals) == expected

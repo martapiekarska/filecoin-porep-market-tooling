@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from decimal import ROUND_CEILING, Decimal, localcontext
 
 import click
 
@@ -20,6 +21,19 @@ MIN_LOGS_BLOCK_RANGE = 50  # below this, give up and fail closed
 
 class FundingHistoryUnavailable(Exception):
     pass
+
+
+# quotes are decimal USDFC strings; funding is in base units (rounded up, so funding never falls short of the quote)
+def tokens_to_base_units(amount: Decimal, decimals: int) -> int:
+    with localcontext() as ctx:
+        ctx.prec = 100
+        return int(amount.scaleb(decimals).to_integral_value(rounding=ROUND_CEILING))
+
+
+# exact decimal string of a base-unit amount (utils.str_from_wei goes through float)
+def base_units_str(amount: int, decimals: int) -> str:
+    text = format(Decimal(amount).scaleb(-decimals), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 @utils.json_dataclass()

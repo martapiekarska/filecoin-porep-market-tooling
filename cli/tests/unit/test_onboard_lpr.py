@@ -29,6 +29,7 @@ def test_lpr_download_claims_allocations_in_process(tmp_path, monkeypatch):
     monkeypatch.setenv("RPC_URL", "https://rpc.example")
     monkeypatch.setattr(od, "get_retrieval_client_path", lambda: "retrieval-client")
     monkeypatch.setattr(od, "_ensure_payee_key", lambda deal, key_file: None)
+    monkeypatch.setattr(od, "_ensure_repair_funded", lambda deal, pieces, host, allow: None)
     monkeypatch.setattr(od, "_echo_download_summary", lambda pieces, no_summary: None)
     monkeypatch.setattr(od, "FileCoinPay", lambda: SimpleNamespace(address=lambda: "0xPay"))
     monkeypatch.setattr(od, "repair_payment_token", lambda deal: "0xToken")

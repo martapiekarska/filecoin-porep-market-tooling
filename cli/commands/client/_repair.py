@@ -1,11 +1,9 @@
-from decimal import ROUND_CEILING, Decimal, localcontext
-
 import click
 
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
-from cli.commands.repair_funding import FundingHistoryUnavailable, get_repair_deposits
+from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_str, get_repair_deposits, tokens_to_base_units
 from cli.commands.repair_utils import (
     RetrievalSource,
     find_healthy_source,
@@ -30,14 +28,8 @@ from cli.services.web3_service import EthAddress, Web3Service
 # retrieval cost, the client's exposure is capped at the deposited amount, and no keys or addresses are exchanged.
 # The healthy SP and its price are found automatically (see repair_utils.find_healthy_source), or come from a legacy
 # repair manifest's embedded source. The deposit is only made once the SP has accepted the deal, and fails closed when
-# earlier deposits can't be checked (see _check_previous_deposits).
-
-
-# quotes are decimal USDFC strings; deposits are base units (rounded up, so a deposit never falls short of the quote)
-def tokens_to_base_units(amount: Decimal, decimals: int) -> int:
-    with localcontext() as ctx:
-        ctx.prec = 100
-        return int(amount.scaleb(decimals).to_integral_value(rounding=ROUND_CEILING))
+# earlier deposits can't be checked (see _check_previous_deposits). The deposit is also the SP's go-signal: `sp onboard-data`
+# only starts a paid download once the deposits the payee has not yet spent cover the quote (see repair_funding).
 
 
 def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
@@ -53,7 +45,7 @@ def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: 
                              allow_unverified_history: bool, allow_repeat_deposit: bool) -> int:
     #
     def amount_str(amount: int) -> str:
-        return f"{utils.str_from_wei(amount, token_decimals)} {token_symbol}"
+        return f"{base_units_str(amount, token_decimals)} {token_symbol}"
 
     click.echo(f"\nChecking previous deposits to {payee} since epoch {since_block}...")
 
@@ -165,10 +157,10 @@ def pay_repair_retrieval(deal_id: int,
     cost = tokens_to_base_units(source.quote.total, token_decimals)
     source_str = f"{source.base_url}" + (f" (deal {source.deal_id}, provider {source.provider_id})" if source.deal_id else "")
 
-    cost_str = utils.str_from_wei(cost, token_decimals)
+    cost_str = base_units_str(cost, token_decimals)
 
     token_balance = token.balance_of(client_address())
-    token_balance_str = utils.str_from_wei(token_balance, token_decimals)
+    token_balance_str = base_units_str(token_balance, token_decimals)
 
     click.echo(f"\nRepair retrieval for deal ID {deal_id} (provider {deal.deal.provider_id}):\n"
                f"  Manifest: {deal.data.manifest_location}\n"
@@ -180,7 +172,7 @@ def pay_repair_retrieval(deal_id: int,
 
     deposit = _check_previous_deposits(token.address(), payee, deal.deal.proposed_at_epoch, cost, token_decimals, token_symbol,
                                        allow_unverified_history, allow_repeat_deposit)
-    deposit_str = utils.str_from_wei(deposit, token_decimals)
+    deposit_str = base_units_str(deposit, token_decimals)
 
     if token_balance < deposit:
         raise click.ClickException(f"Insufficient {token_symbol} balance {token_balance_str} for repair retrieval deposit {deposit_str} {token_symbol}")
