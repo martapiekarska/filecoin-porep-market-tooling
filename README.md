@@ -277,10 +277,12 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
 
    ```bash
    python3 ./porep_tooling_cli.py sp onboard-data <new-deal-id> --output-dir <dir> \
-     --downloader lpr --payee-key-file ./payee.key
+     --payee-key-file ./payee.key
    ```
 
-   The CLI finds the healthy SP itself (`--host` / `--port` override it), and checks that the key belongs to the
+   By default (`--downloader auto`) `onboard-data` uses aria2 when the manifest host serves sample pieces for free, as
+   for any regular deal, and otherwise retrieves the data through `retrieval-client` as a repair; `--downloader lpr`
+   forces the latter. The payee key is only needed when the source charges. The CLI finds the healthy SP itself (`--host` / `--port` override it), and checks that the key belongs to the
    deal's payee before downloading. If the client's deposits don't cover the quote yet, it stops with
    `Waiting for client funding: quote …, available …, short …` and the command the client runs to close the gap; run
    `onboard-data` again once it is funded. If the RPC can't serve the deposit and payment logs since the deal was
@@ -288,8 +290,8 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
    paying any difference from the payee's own funds. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
    Filecoin Pay gas. `retrieval-client` gets the CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same
    FileCoinPay account the client funded, in USDFC. Works with `retrieval-client` built from LPR `main` or
-   `v1-maintenance`. In `tools/sp-pipeline.sh`, set
-   `ONBOARD_DATA_DOWNLOADER="lpr"` and `PAYEE_KEY_FILE`.
+   `v1-maintenance`. In `tools/sp-pipeline.sh`, set `PAYEE_KEY_FILE`; deals still waiting for client funding are
+   skipped and retried on the next run.
 
 ### Legacy (v1) repair with a manually chosen source
 
@@ -322,8 +324,8 @@ supplies the dataset's original manifest and the healthy source, and nothing is 
    `--repair-source-url` must match the source embedded in the manifest. `client pay-repair-retrieval <new-deal-id>`
    retries the payment step and picks up the embedded source.
 
-3. **New SP:** `sp onboard-data <new-deal-id> --downloader lpr ...` (or `aria2` if the source serves for free) fetches
-   from the embedded source; `--host` / `--port` override it.
+3. **New SP:** `sp onboard-data <new-deal-id> ...` fetches from the embedded source through `retrieval-client`, behind
+   the same funding check; `--host` / `--port` override the source (`--downloader aria2` if it serves for free).
 
 A source that doesn't serve the dataset's pieces, such as an SP that is down, is refused.
 

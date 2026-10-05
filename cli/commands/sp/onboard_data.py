@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import subprocess
@@ -12,15 +13,18 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_str, get_repair_funding, tokens_to_base_units
 from cli.commands.repair_utils import (
+    RetrievalQuote,
     SourceUnavailable,
     child_env,
     ensure_secret_file,
     find_healthy_source,
     get_manifest_repair_source,
     get_retrieval_client_path,
+    probe_piece,
     quote_retrieval,
     repair_payment_token,
     resolve_repair_payee,
+    throwaway_key_file,
 )
 from cli.commands.sp.claim_allocations import claim_allocations as claim_allocations_command
 from cli.services.contracts.erc20_contract import ERC20Contract
@@ -153,7 +157,8 @@ def _ensure_payee_key(deal, payee_key_file: str | None):
                    "started from this environment; prefer --payee-key-file with a chmod 600 file.")
         private_key = os.environ["FILPAY_PRIVATE_KEY"].strip()
     else:
-        raise click.UsageError("--downloader lpr requires the deal payee private key: set --payee-key-file / SP_PAYEE_KEY_FILE or FILPAY_PRIVATE_KEY")
+        raise click.UsageError("A paid repair download requires the deal payee private key: set --payee-key-file / SP_PAYEE_KEY_FILE "
+                               "or FILPAY_PRIVATE_KEY")
 
     try:
         key_address = EthAddress.from_private_key(private_key if private_key.startswith("0x") else f"0x{private_key}")
@@ -167,22 +172,20 @@ def _ensure_payee_key(deal, payee_key_file: str | None):
                                    f"the repair retrieval is funded in the deal payee's FileCoinPay account.")
 
 
-# The client's deposit is the go-signal and the spending cap for a paid repair download: quote what is left to download
-# right before fetching it, and only start once the client's deposits not yet spent by the payee cover that quote.
-def _ensure_repair_funded(deal, pieces: list[dict], download_host: str, allow_unfunded_retrieval: bool):
-    token = ERC20Contract(repair_payment_token(deal))
-
+# exact quote of what is left to download, taken right before downloading it
+def _quote_download(pieces: list[dict], download_host: str) -> RetrievalQuote:
     click.echo(f"\nQuoting {len(pieces)} piece(s) from {download_host}...")
 
     try:
-        quote = quote_retrieval(download_host, [piece["pieceCid"] for piece in pieces])
+        return quote_retrieval(download_host, [piece["pieceCid"] for piece in pieces])
     except SourceUnavailable as e:
         raise click.ClickException(f"Source {download_host} cannot serve the data: {e}") from e
 
-    if quote.paid_pieces == 0:
-        click.echo(f"All {quote.free_pieces} piece(s) are free; no client funding needed.")
-        return
 
+# The client's deposit is the go-signal and the spending cap for a paid repair download: only start once the client's
+# deposits not yet spent by the payee cover the quote.
+def _ensure_repair_funded(deal, quote: RetrievalQuote, allow_unfunded_retrieval: bool):
+    token = ERC20Contract(repair_payment_token(deal))
     token_decimals = token.decimals()
     token_symbol = token.symbol()
 
@@ -226,6 +229,29 @@ def _ensure_repair_funded(deal, pieces: list[dict], download_host: str, allow_un
                                f"afterwards, or use --allow-unfunded-retrieval to pay the difference from the payee's own funds.")
 
 
+AUTO_PROBE_PIECES = 3
+
+
+# aria2 when the download host serves the pieces for free, as for any regular deal; otherwise this is a repair, fetched
+# through retrieval-client (which also handles free sources), from a healthy SP unless --host is given
+def _choose_downloader(pieces: list[dict], download_host: str, has_repair_source: bool) -> str:
+    if has_repair_source:
+        click.echo("Downloading through retrieval-client (legacy repair).")
+        return "lpr"
+
+    for piece in pieces[:AUTO_PROBE_PIECES]:
+        piece_name = piece["storagePath"].removesuffix(".car")  # the URL aria2 would fetch
+        probe = probe_piece(download_host, piece_name)
+
+        if probe.status != "free":
+            click.echo(f"{download_host} does not serve piece {piece_name} for free ({probe.detail or probe.status}); "
+                       f"downloading through retrieval-client (FCSS repair).")
+            return "lpr"
+
+    click.echo(f"{download_host} serves the pieces for free; downloading with aria2.")
+    return "aria2"
+
+
 def _download_with_lpr(ctx,
                        deal,
                        pieces: list[dict],
@@ -237,8 +263,36 @@ def _download_with_lpr(ctx,
                        allow_unfunded_retrieval: bool = False):
     #
     retrieval_client_path = get_retrieval_client_path()
-    _ensure_payee_key(deal, payee_key_file)
-    _ensure_repair_funded(deal, pieces, download_host, allow_unfunded_retrieval)
+    quote = _quote_download(pieces, download_host)
+
+    with contextlib.ExitStack() as stack:
+        if quote.paid_pieces:
+            _ensure_payee_key(deal, payee_key_file)
+            _ensure_repair_funded(deal, quote, allow_unfunded_retrieval)
+            key_file = payee_key_file
+        else:
+            # nothing to pay, so the payee key isn't needed
+            click.echo(f"All {quote.free_pieces} piece(s) are free; downloading without the payee key.")
+            key_file = str(stack.enter_context(throwaway_key_file()))
+
+        _run_retrieval_client(ctx, retrieval_client_path, pieces, download_host, output_dir, no_summary, key_file)
+
+    downloaded = _move_lpr_downloads(pieces, output_dir)
+
+    if claim_allocations:
+        for piece, output_file in downloaded:
+            ctx.invoke(claim_allocations_command, software=claim_allocations, deal_id=deal.deal.deal_id,
+                       cars_dir=str(output_file.parent), cid=piece["pieceCid"])
+
+
+def _run_retrieval_client(ctx,
+                          retrieval_client_path: str,
+                          pieces: list[dict],
+                          download_host: str,
+                          output_dir: Path,
+                          no_summary: bool,
+                          key_file: str | None):
+    #
     cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
 
     try:
@@ -260,29 +314,22 @@ def _download_with_lpr(ctx,
             if not any(arg == option or arg.startswith(f"{option}=") for arg in ctx.args):
                 command += [option, value]
 
-        # without --payee-key-file, retrieval-client reads its key from the FILPAY_PRIVATE_KEY env var
-        if payee_key_file:
-            command += ["--filpay-private-key-file", str(Path(payee_key_file).resolve())]
+        # without a key file, retrieval-client reads the payee key from the FILPAY_PRIVATE_KEY env var
+        if key_file:
+            command += ["--filpay-private-key-file", str(Path(key_file).resolve())]
 
         command += ctx.args
 
         utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
         click.echo("\n")
         # the payee key is the only secret retrieval-client gets, and only when it comes from the environment
-        subprocess.run(command, check=True, env=child_env(keep=() if payee_key_file else ("FILPAY_PRIVATE_KEY",)))
+        subprocess.run(command, check=True, env=child_env(keep=() if key_file else ("FILPAY_PRIVATE_KEY",)))
 
     except subprocess.CalledProcessError as e:
         raise click.ClickException(f"retrieval-client failed with exit code {e.returncode}; see its output above") from e
 
     finally:
         cid_file.unlink(missing_ok=True)
-
-    downloaded = _move_lpr_downloads(pieces, output_dir)
-
-    if claim_allocations:
-        for piece, output_file in downloaded:
-            ctx.invoke(claim_allocations_command, software=claim_allocations, deal_id=deal.deal.deal_id,
-                       cars_dir=str(output_file.parent), cid=piece["pieceCid"])
 
 
 def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -> Path:
@@ -310,24 +357,25 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
               help="Directory to save downloaded pieces.")
 @click.option("--host",
               help="Host to use for .car files download.  [default: the manifest's repair source for legacy repairs, else same host "
-                   "as manifest URL; with --downloader lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
+                   "as manifest URL; with lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
               help="Port to use for .car files download from --host or the manifest URL host; not used when the source "
-                   "comes from the deal manifest (legacy repair) or is auto-detected (--downloader lpr).")
+                   "comes from the deal manifest (legacy repair) or is auto-detected (lpr).")
 @click.option("--force", is_flag=True, default=False,
               help="Force download even if all allocations are claimed.  [default: false]")
 @click.option("--no-summary", is_flag=True, default=False,
               help="Don't print the initial download summary.  [default: false]")
 @click.option("--claim-allocations", type=click.Choice(["curio", "boost"], case_sensitive=False),
               help="Claim allocation(s) for each piece right after download using specified software.  [default: none]")
-@click.option("--downloader", type=click.Choice(["aria2", "lpr"], case_sensitive=False), default="aria2", show_default=True,
+@click.option("--downloader", type=click.Choice(["auto", "aria2", "lpr"], case_sensitive=False), default="auto", show_default=True,
               help="Downloader to use: aria2 for free HTTP piece servers, lpr for large-paid-retrievals retrieval-client, "
-                   "which pays sp-proxy quotes, also handles free servers and can auto-detect a healthy SP (FCSS repair).")
+                   "which pays sp-proxy quotes, also handles free servers and can auto-detect a healthy SP (FCSS repair). "
+                   "auto uses aria2 when the download host serves sample pieces for free, else lpr.")
 @click.option("--payee-key-file", envvar="SP_PAYEE_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
-              help="With --downloader lpr: file with the private key of the deal's payee address (`sp register-sp --payee-address`), "
+              help="For paid lpr downloads: file with the private key of the deal's payee address (`sp register-sp --payee-address`), "
                    "passed to retrieval-client.  [default: FILPAY_PRIVATE_KEY env var]")
 @click.option("--allow-unfunded-retrieval", is_flag=True, default=False,
-              help="With --downloader lpr: download even if the client's repair deposits don't cover the retrieval quote, or can't be "
+              help="For paid lpr downloads: download even if the client's repair deposits don't cover the retrieval quote, or can't be "
                    "checked; the payee's own funds pay the rest.  [default: false]")
 @click.pass_context
 # TODO LATER add commP files verification after download
@@ -339,7 +387,7 @@ def onboard_data(ctx,
                  force: bool = False,
                  no_summary: bool = False,
                  claim_allocations: str | None = None,
-                 downloader: str = "aria2",
+                 downloader: str = "auto",
                  payee_key_file: str | None = None,
                  allow_unfunded_retrieval: bool = False):
     """
@@ -351,10 +399,14 @@ def onboard_data(ctx,
     See aria2c --help / retrieval-client fetch --help for available options.
 
     \b
-    With --downloader lpr the data is fetched (and paid for if needed) from a large-paid-retrievals sp-proxy,
+    By default (--downloader auto) aria2 is used when the download host (--host:--port, else the manifest URL
+    host) serves sample pieces for free, as for any regular deal; otherwise, and for legacy repairs, lpr.
+
+    \b
+    With lpr the data is fetched (and paid for if needed) from a large-paid-retrievals sp-proxy,
     paying from the deal payee's FileCoinPay account funded by the client (see `client pay-repair-retrieval`).
     Paid downloads only start once the client's deposits, less what the payee has spent on retrievals since
-    the deal was proposed, cover the source's quote for the pieces still to download.
+    the deal was proposed, cover the source's quote for the pieces still to download; free ones need no payee key.
     The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
     dataset whose piece endpoint serves the data), or --host:--port if given.
 
@@ -371,7 +423,11 @@ def onboard_data(ctx,
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    aria2c_path = _get_aria2c_path() if downloader == "aria2" else None
+    # fail before anything else if the chosen downloader is missing
+    if downloader == "aria2":
+        _get_aria2c_path()
+    elif downloader == "lpr":
+        get_retrieval_client_path()
 
     click.echo("Fetching deal details...")
     deal = PoRepMarketViewHelper().get_deal_view(deal_id)
@@ -417,6 +473,9 @@ def onboard_data(ctx,
         click.echo(f"Using repair source from the deal manifest: {repair_source}")
         download_host = repair_source
 
+    if downloader == "auto":
+        downloader = _choose_downloader(pieces_to_download if not force else pieces, download_host, bool(repair_source and not host))
+
     if downloader == "lpr":
         if not host and not repair_source:
             download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
@@ -425,9 +484,7 @@ def onboard_data(ctx,
                            no_summary, payee_key_file, claim_allocations, allow_unfunded_retrieval)
         return
 
-    if not aria2c_path:
-        raise RuntimeError("aria2c path not resolved")
-
+    aria2c_path = _get_aria2c_path()
     aria2_file = _write_aria2c_input_file(pieces_to_download if not force else pieces, download_host, _output_dir, no_summary)
 
     try:

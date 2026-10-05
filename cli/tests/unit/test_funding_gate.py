@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -6,7 +7,7 @@ import click
 import pytest
 
 from cli.commands.repair_funding import FundingHistoryUnavailable, RepairFunding
-from cli.commands.repair_utils import RetrievalQuote, SourceUnavailable
+from cli.commands.repair_utils import PieceProbe, RetrievalQuote, SourceUnavailable
 
 od = importlib.import_module("cli.commands.sp.onboard_data")
 
@@ -44,7 +45,9 @@ def gate(monkeypatch):
 
 
 def run(allow_unfunded_retrieval=False):
-    od._ensure_repair_funded(DEAL, PIECES, "https://healthy.example", allow_unfunded_retrieval)
+    quote = od._quote_download(PIECES, "https://healthy.example")
+    if quote.paid_pieces:
+        od._ensure_repair_funded(DEAL, quote, allow_unfunded_retrieval)
 
 
 PAID = RetrievalQuote(total=Decimal("1.5"), paid_pieces=2, free_pieces=0)
@@ -105,13 +108,66 @@ def test_unavailable_source_stops_before_any_payment(gate):
     assert not calls.funding
 
 
-def test_gate_runs_before_retrieval_client(monkeypatch):
-    order = []
-    monkeypatch.setattr(od, "get_retrieval_client_path", lambda: "retrieval-client")
-    monkeypatch.setattr(od, "_ensure_payee_key", lambda deal, key_file: order.append("key"))
-    monkeypatch.setattr(od, "_ensure_repair_funded", lambda deal, pieces, host, allow: order.append(("gate", allow)) or (_ for _ in ()).throw(click.ClickException("short")))
-    monkeypatch.setattr(od.subprocess, "run", lambda *args, **kwargs: order.append("fetch"))
+def lpr_download(monkeypatch, quote: RetrievalQuote, gate_error: Exception | None = None):
+    events = []
 
-    with click.Context(od.onboard_data) as ctx, pytest.raises(click.ClickException):
-        od._download_with_lpr(ctx, DEAL, PIECES, "https://healthy.example", None, True, None, None, True)
-    assert order == ["key", ("gate", True)]
+    def fake_gate(deal, quote, allow):
+        events.append(("gate", allow))
+        if gate_error:
+            raise gate_error
+
+    monkeypatch.setattr(od, "get_retrieval_client_path", lambda: "retrieval-client")
+    monkeypatch.setattr(od, "_quote_download", lambda pieces, host: quote)
+    monkeypatch.setattr(od, "_ensure_payee_key", lambda deal, key_file: events.append(("key", key_file)))
+    monkeypatch.setattr(od, "_ensure_repair_funded", fake_gate)
+    monkeypatch.setattr(od, "_run_retrieval_client", lambda ctx, rc, pieces, host, out, no_summary, key_file:
+                        events.append(("fetch", key_file, Path(key_file).read_text(encoding="utf-8") if Path(key_file).exists() else None)))
+    monkeypatch.setattr(od, "_move_lpr_downloads", lambda pieces, output_dir: [])
+
+    with click.Context(od.onboard_data) as ctx:
+        od._download_with_lpr(ctx, DEAL, PIECES, "https://healthy.example", None, True, "/sp/payee.key", None, True)
+    return events
+
+
+def test_paid_download_checks_key_and_funding_before_retrieval_client(monkeypatch):
+    with pytest.raises(click.ClickException, match="short"):
+        lpr_download(monkeypatch, PAID, gate_error=click.ClickException("short"))
+
+
+def test_paid_download_uses_the_payee_key(monkeypatch):
+    events = lpr_download(monkeypatch, PAID)
+    assert events == [("key", "/sp/payee.key"), ("gate", True), ("fetch", "/sp/payee.key", None)]
+
+
+def test_free_download_needs_no_payee_key(monkeypatch, tmp_path):
+    events = lpr_download(monkeypatch, RetrievalQuote(total=Decimal(0), paid_pieces=0, free_pieces=2))
+    (kind, key_file, key), = events
+    assert kind == "fetch" and key_file != "/sp/payee.key" and len(key) == 64
+    assert not Path(key_file).exists()  # throwaway key removed after the download
+
+
+def piece(name):
+    return {"pieceCid": f"baga{name}", "storagePath": f"{name}.car"}
+
+
+@pytest.mark.parametrize("statuses, expected", [
+    (["free", "free", "free"], "aria2"),
+    (["free", "paid"], "lpr"),
+    (["unavailable"], "lpr"),
+])
+def test_auto_downloader_probes_the_urls_aria2_would_fetch(monkeypatch, statuses, expected):
+    probed = []
+
+    def fake_probe(base_url, name):
+        probed.append((base_url, name))
+        return PieceProbe(status=statuses[len(probed) - 1])
+
+    monkeypatch.setattr(od, "probe_piece", fake_probe)
+    pieces = [piece(name) for name in ("p1", "p2", "p3", "p4")]
+    assert od._choose_downloader(pieces, "http://client.example:7777", False) == expected
+    assert probed == [("http://client.example:7777", f"p{i}") for i in range(1, len(statuses) + 1)]
+
+
+def test_auto_downloader_uses_retrieval_client_for_legacy_repairs(monkeypatch):
+    monkeypatch.setattr(od, "probe_piece", lambda *args: pytest.fail("legacy repair sources are not probed"))
+    assert od._choose_downloader([piece("p1")], "https://source.example", True) == "lpr"

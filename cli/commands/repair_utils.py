@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import ipaddress
 import json
 import logging
@@ -140,14 +141,20 @@ def parse_dry_run_quote(output: str, expected_pieces: int) -> RetrievalQuote:
 
 # Exact quote for every piece from the source, via `retrieval-client fetch --dry-run` (no transactions, no downloads).
 # fetch always loads a key, so a throwaway one is used: it only identifies the requester to public deals' sp-proxies.
-def quote_retrieval(base_url: str, piece_cids: list[str]) -> RetrievalQuote:
-    retrieval_client_path = get_retrieval_client_path()
-
+# retrieval-client always loads a key, even when nothing is paid (dry runs, free sources): give it one that holds nothing
+@contextlib.contextmanager
+def throwaway_key_file():
     with tempfile.TemporaryDirectory() as tmp:
         key_file = Path(tmp) / "throwaway.key"
         key_file.write_text(secrets.token_hex(32), encoding="utf-8")
         key_file.chmod(0o600)
+        yield key_file
 
+
+def quote_retrieval(base_url: str, piece_cids: list[str]) -> RetrievalQuote:
+    retrieval_client_path = get_retrieval_client_path()
+
+    with tempfile.TemporaryDirectory() as tmp, throwaway_key_file() as key_file:
         cid_file = Path(tmp) / "cids.txt"
         cid_file.write_text("\n".join(piece_cids) + "\n", encoding="utf-8")
 
