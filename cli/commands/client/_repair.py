@@ -213,7 +213,7 @@ def pay_repair_retrieval(deal_id: int,
 
         price_per_gib = source.price_per_gib
 
-    retrieval_wallet = resolve_repair_payee(deal)
+    payee = resolve_repair_payee(deal)
 
     token = ERC20Contract(repair_payment_token(deal))
     token_decimals = token.decimals()
@@ -232,10 +232,10 @@ def pay_repair_retrieval(deal_id: int,
                f"  Pieces: {len(pieces)}, billed per GiB rounded up per piece at {price_per_gib} {token_symbol}/GiB{source_str}\n"
                f"  (estimate: assumes every piece is priced like the sampled ones)\n"
                f"  Estimated retrieval cost: {cost_str} {token_symbol}\n"
-               f"  New SP retrieval wallet (deal payee): {retrieval_wallet}\n"
+               f"  Paid into the FileCoinPay account of the new SP's payee: {payee}\n"
                f"  Client token balance: {token_balance_str} {token_symbol}")
 
-    deposit = _check_previous_deposits(token.address(), retrieval_wallet, deal.deal.proposed_at_epoch, cost, token_decimals, token_symbol,
+    deposit = _check_previous_deposits(token.address(), payee, deal.deal.proposed_at_epoch, cost, token_decimals, token_symbol,
                                        allow_unverified_history, allow_repeat_deposit)
     deposit_str = utils.str_from_wei(deposit, token_decimals)
 
@@ -243,7 +243,7 @@ def pay_repair_retrieval(deal_id: int,
         raise click.ClickException(f"Insufficient {token_symbol} balance {token_balance_str} for repair retrieval deposit {deposit_str} {token_symbol}")
 
     utils.confirm(f"\nDeposit {deposit_str} {token_symbol} one-off from {client_address()} into the FileCoinPay account "
-                  f"of deal ID {deal_id} payee {retrieval_wallet}?\n"
+                  f"of deal ID {deal_id} payee {payee}?\n"
                   f"This deposit is NOT refundable through this CLI or FileCoinPay: only the SP can return it.", abort=True)
 
     filecoin_pay = FileCoinPay()
@@ -254,5 +254,5 @@ def pay_repair_retrieval(deal_id: int,
         click.echo(f"Approved FileCoinPay to spend {deposit_str} {token_symbol}: {tx_hash}")
         Web3Service().wait_for_pending_transactions(client_address())
 
-    tx_hash = filecoin_pay.deposit(token.address(), retrieval_wallet, deposit, client_signer()).tx_hash
-    click.echo(f"Deposited {deposit_str} {token_symbol} for repair retrieval of deal ID {deal_id} to {retrieval_wallet}: {tx_hash}")
+    tx_hash = filecoin_pay.deposit(token.address(), payee, deposit, client_signer()).tx_hash
+    click.echo(f"Deposited {deposit_str} {token_symbol} for repair retrieval of deal ID {deal_id} to {payee}: {tx_hash}")
