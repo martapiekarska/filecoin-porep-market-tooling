@@ -288,16 +288,52 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
 
    By default (`--downloader auto`) `onboard-data` uses aria2 when the manifest host serves sample pieces for free, as
    for any regular deal, and otherwise retrieves the data through `retrieval-client` as a repair; `--downloader lpr`
-   forces the latter. The payee key is only needed when the source charges. The CLI finds the healthy SP itself
-   (`--host` / `--port` override it), and checks that the key belongs to the deal's payee before downloading. If the
-   client's deposits don't cover the quote yet, it stops with `Waiting for client funding: quote …, available …, short
-   …` and the command the client runs to close the gap; run `onboard-data` again once it is funded. If the RPC can't
-   serve the deposit and payment logs since the deal was proposed, it also stops rather than pay from the SP's own
-   funds. `--allow-unfunded-retrieval` downloads anyway, paying any difference from the payee's own funds. The payee
-   must be a regular `0x` wallet, not a contract, with a little FIL for Filecoin Pay gas. `retrieval-client` gets the
-   CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same FileCoinPay account the client funded, in USDFC.
-   Works with `retrieval-client` built from LPR `main` or `v1-maintenance`. In `tools/sp-pipeline.sh`, set
-   `PAYEE_KEY_FILE`; deals still waiting for client funding are skipped and retried on the next run.
+   forces the latter. The payee key is only needed when the source charges. The CLI finds the healthy SP itself (`--host` / `--port` override it), and checks that the key belongs to the
+   deal's payee before downloading. If the client's deposits don't cover the quote yet, it stops with
+   `Waiting for client funding: quote …, available …, short …` and the command the client runs to close the gap; run
+   `onboard-data` again once it is funded. If the RPC can't serve the deposit and payment logs since the deal was
+   proposed, it also stops rather than pay from the SP's own funds. `--allow-unfunded-retrieval` downloads anyway,
+   paying any difference from the payee's own funds. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
+   Filecoin Pay gas. `retrieval-client` gets the CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same
+   FileCoinPay account the client funded, in USDFC. Works with `retrieval-client` built from LPR `main` or
+   `v1-maintenance`. In `tools/sp-pipeline.sh`, set `PAYEE_KEY_FILE`; deals still waiting for client funding are
+   skipped and retried on the next run.
+
+### Legacy (v1) repair with a manually chosen source
+
+Datasets from the v1 PoRep market are repaired onto a regular v2 deal. The CLI doesn't read v1 contracts, so the client
+supplies the dataset's original manifest and the healthy source, and nothing is looked up or detected:
+
+1. **Client:** prepare the repair manifest from the original manifest and the healthy SP's piece server / `sp-proxy`
+   URL. The original manifest can be a local file, a manifest URL, or a [toads.directory](https://toads.directory/)
+   dataset page:
+
+   ```bash
+   python3 ./porep_tooling_cli.py client prepare-legacy-repair https://toads.directory/dataset/<id> \
+     --repair-source-url https://<healthy-sp-host>:<port>
+   ```
+
+   toads.directory serves data-prep-standard super-manifests, which are converted to this CLI's manifest format: each
+   piece's `fileSize` is its CAR size, `pieceSize` its minimal padded size, and the smallest piece is the DAG piece.
+   The source is embedded in the manifest (`repairSource`), so the new SP knows where to fetch from. The command
+   checks the source serves the data at the expected sizes and shows the estimated retrieval cost.
+
+2. **Client:** host the written manifest at any URL and propose the deal. The SP is matched like for any other deal, and
+   the retrieval cost is paid into its payee account as for `client repair`:
+
+   ```bash
+   python3 ./porep_tooling_cli.py client propose-deal <hosted-repair-manifest-url> ... \
+     --repair-legacy \
+     --repair-source-url https://<healthy-sp-host>:<port>
+   ```
+
+   `--repair-source-url` must match the source embedded in the manifest. `client pay-repair-retrieval <new-deal-id>`
+   retries the payment step and picks up the embedded source.
+
+3. **New SP:** `sp onboard-data <new-deal-id> ...` fetches from the embedded source through `retrieval-client`, behind
+   the same funding check; `--host` / `--port` override the source (`--downloader aria2` if it serves for free).
+
+A source that doesn't serve the dataset's pieces, such as an SP that is down, is refused.
 
 To have a specific SP store the repair copy, an admin proposes the deal with `admin propose-deal-for-offer`, and the
 client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only action.
@@ -305,8 +341,8 @@ client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only 
 Limitations:
 
 - Only deals paid in **USDFC** can be repaired: LPR `sp-proxy`s settle retrievals in USDFC, and the client's deposit and the
-  new SP's retrieval use the deal's payment token. `client repair` and `pay-repair-retrieval` refuse other tokens.
-  USDFC is the chain's known USDFC address, or `SP_PROXY_PAY_TOKEN_ADDRESS` on local devnets (the same variable
+  new SP's retrieval use the deal's payment token. `client repair`, `propose-deal --repair-legacy` and
+  `pay-repair-retrieval` refuse other tokens. USDFC is the chain's known USDFC address, or `SP_PROXY_PAY_TOKEN_ADDRESS` on local devnets (the same variable
   `retrieval-client` reads).
 - LPR currently lets only the deal owner retrieve **private** deals, so only **public** deals can be repaired. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.

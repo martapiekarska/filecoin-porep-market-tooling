@@ -27,9 +27,9 @@ def pay_repair_retrieval(deal_id: int,
     One-off payment of a repair retrieval for a new SP.
 
     \b
-    1. Find the source of the data: --source-url, or a healthy SP found automatically (another provider's
-       ACTIVE, PUBLIC deal with the same manifest hash and claims on-chain, whose advertised piece endpoint
-       serves the data),
+    1. Find the source of the data: the source embedded in DEAL_ID's manifest (legacy repair), --source-url,
+       or a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal with the same manifest hash
+       and claims on-chain, whose advertised piece endpoint serves the data),
     2. get the source's exact quote for every piece with `retrieval-client fetch --dry-run` (nothing to pay if free),
     3. check earlier deposits from this client to the payee since DEAL_ID was proposed: refuse if they can't be
        checked or already cover the cost (see the --allow-* flags), deposit only the shortfall if they cover part,
@@ -38,7 +38,7 @@ def pay_repair_retrieval(deal_id: int,
 
     DEAL_ID must be ACCEPTED or ACTIVE: the deposit can only be returned by the SP, so it waits for the SP to
     accept the deal. This is separate from and in addition to the regular deal payment (`client init-deal`).
-    The same step runs as part of `client repair`.
+    The same step runs as part of `client repair` and `client propose-deal --repair-legacy`.
 
     DEAL_ID - The new (repair) deal ID.
     """

@@ -1,6 +1,7 @@
 import base64
 import contextlib
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -24,7 +25,8 @@ from cli.services.web3_service import ActorId, EthAddress, Web3Service
 # Shared code for the FCSS repair flow, used by the client commands and `sp onboard-data`:
 # - finding a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges,
 # - resolving the payee and token the repair retrieval is paid with (the same for client and SP),
-# - small helpers: child process environments, secret file checks.
+# - legacy (v1) repair manifests with an embedded source,
+# - small helpers: Decimal price options, child process environments, secret file checks.
 #
 # Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
 # deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
@@ -456,3 +458,95 @@ def repair_payment_token(deal: PoRepMarketDealView) -> EthAddress:
     token = EthAddress(deal.payment.payment_token)
     ensure_usdfc(token, f"Deal ID {deal.deal.deal_id}")
     return token
+
+
+# Legacy (v1) repair: the client supplies the original manifest and the healthy source; the source is embedded in the
+# new deal's manifest under this key, so the new SP's `sp onboard-data` knows where to fetch from with no coordination.
+REPAIR_SOURCE_KEY = "repairSource"
+_TOADS_DATASET_URL = re.compile(r"^https://toads\.directory/dataset/([0-9a-fA-F-]{36})/?$")
+
+
+def get_manifest_repair_source(manifest: list[dict]) -> str | None:
+    source = manifest[0].get(REPAIR_SOURCE_KEY)
+    return source.rstrip("/") if isinstance(source, str) and source else None
+
+
+# local file, manifest URL, or a toads.directory dataset page URL (resolved through its dataset API)
+def load_manifest_json(manifest_input: str) -> object:
+    toads_match = _TOADS_DATASET_URL.match(manifest_input)
+
+    if toads_match:
+        url = f"https://toads.directory/api/datasets/{toads_match.group(1)}"
+    elif manifest_input.startswith(("http://", "https://")):
+        url = manifest_input
+    else:
+        try:
+            return json.loads(Path(manifest_input).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise click.ClickException(f"Failed to read manifest file {manifest_input}: {e}") from e
+
+    commands_utils.validate_and_parse_url(url)
+
+    try:
+        resp = requests.get(url, timeout=PROBE_TIMEOUT_SECONDS, allow_redirects=False)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as e:
+        raise click.ClickException(f"Failed to fetch manifest from {url}: {e}") from e
+
+    if toads_match:
+        try:
+            return data["data"]["manifestData"]
+        except (KeyError, TypeError) as e:
+            raise click.ClickException(f"No manifest found in toads.directory dataset {url}") from e
+
+    return data
+
+
+def _padded_piece_size(file_size: int) -> int:
+    # smallest power of two holding the FR32-expanded CAR (127 data bytes per 128-byte chunk), at least the 128-byte minimum piece
+    return max(128, 1 << (-(-file_size * 128 // 127) - 1).bit_length())
+
+
+# Converts a data-prep-standard super-manifest whose contents are the pieces' CAR files (as served by toads.directory)
+# into this CLI's manifest format. pieceSize is the minimal padded size of each CAR, and the smallest piece is taken to
+# be the Singularity DAG piece (only used by `client make-allocations --exclude-dag`).
+def _super_manifest_to_manifest(super_manifest: dict) -> list[dict]:
+    cars = {entry.get("name"): entry for entry in super_manifest.get("contents") or [] if isinstance(entry, dict)}
+    dataset_id = str(super_manifest.get("uuid") or "legacy")
+    pieces = []
+
+    for piece in super_manifest.get("pieces") or []:
+        car = cars.get(f"{piece.get('piece_cid')}.car")
+
+        if not car or not isinstance(car.get("byte_length"), int) or car.get("piece_cid") != piece["piece_cid"]:
+            raise click.ClickException(f"Unsupported super-manifest: no `<piece_cid>.car` contents entry with byte_length "
+                                       f"for piece {piece.get('piece_cid')}")
+
+        pieces.append({
+            "pieceCid": piece["piece_cid"],
+            "pieceType": "data",
+            "pieceSize": _padded_piece_size(car["byte_length"]),
+            "fileSize": car["byte_length"],
+            "preparationId": dataset_id,
+            "attachmentId": dataset_id,
+            "storagePath": f"{piece['piece_cid']}.car",
+        })
+
+    if len(pieces) < 2:
+        raise click.ClickException("Unsupported super-manifest: expected a DAG piece and at least one data piece")
+
+    min(pieces, key=lambda p: p["fileSize"])["pieceType"] = "dag"
+    return [{"dataset": {"uuid": dataset_id, "name": super_manifest.get("name")}, "pieces": pieces}]
+
+
+def to_legacy_repair_manifest(manifest_json: object, repair_source_url: str) -> list[dict]:
+    if isinstance(manifest_json, dict) and "@spec" in manifest_json:
+        manifest = _super_manifest_to_manifest(manifest_json)
+    elif isinstance(manifest_json, list) and manifest_json and isinstance(manifest_json[0], dict):
+        manifest = manifest_json  # already in this CLI's format
+    else:
+        raise click.ClickException("Unsupported manifest format: expected this CLI's manifest or a data-prep-standard super-manifest")
+
+    manifest[0][REPAIR_SOURCE_KEY] = repair_source_url.rstrip("/")
+    return manifest

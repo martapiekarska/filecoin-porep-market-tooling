@@ -18,6 +18,7 @@ from cli.commands.repair_utils import (
     child_env,
     ensure_secret_file,
     find_healthy_source,
+    get_manifest_repair_source,
     get_retrieval_client_path,
     probe_piece,
     quote_retrieval,
@@ -233,7 +234,11 @@ AUTO_PROBE_PIECES = 3
 
 # aria2 when the download host serves the pieces for free, as for any regular deal; otherwise this is a repair, fetched
 # through retrieval-client (which also handles free sources), from a healthy SP unless --host is given
-def _choose_downloader(pieces: list[dict], download_host: str) -> str:
+def _choose_downloader(pieces: list[dict], download_host: str, has_repair_source: bool) -> str:
+    if has_repair_source:
+        click.echo("Downloading through retrieval-client (legacy repair).")
+        return "lpr"
+
     for piece in pieces[:AUTO_PROBE_PIECES]:
         piece_name = piece["storagePath"].removesuffix(".car")  # the URL aria2 would fetch
         probe = probe_piece(download_host, piece_name)
@@ -351,11 +356,11 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--output-dir", type=click.Path(file_okay=False), required=True,
               help="Directory to save downloaded pieces.")
 @click.option("--host",
-              help="Host to use for .car files download.  [default: same host as manifest URL; with lpr: a healthy SP "
-                   "auto-detected from other providers' deals for the same dataset]")
+              help="Host to use for .car files download.  [default: the manifest's repair source for legacy repairs, else same host "
+                   "as manifest URL; with lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
               help="Port to use for .car files download from --host or the manifest URL host; not used when the source "
-                   "is auto-detected (lpr).")
+                   "comes from the deal manifest (legacy repair) or is auto-detected (lpr).")
 @click.option("--force", is_flag=True, default=False,
               help="Force download even if all allocations are claimed.  [default: false]")
 @click.option("--no-summary", is_flag=True, default=False,
@@ -395,7 +400,7 @@ def onboard_data(ctx,
 
     \b
     By default (--downloader auto) aria2 is used when the download host (--host:--port, else the manifest URL
-    host) serves sample pieces for free, as for any regular deal; otherwise lpr.
+    host) serves sample pieces for free, as for any regular deal; otherwise, and for legacy repairs, lpr.
 
     \b
     With lpr the data is fetched (and paid for if needed) from a large-paid-retrievals sp-proxy,
@@ -404,6 +409,10 @@ def onboard_data(ctx,
     the deal was proposed, cover the source's quote for the pieces still to download; free ones need no payee key.
     The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
     dataset whose piece endpoint serves the data), or --host:--port if given.
+
+    \b
+    For legacy (v1) repairs the source embedded in the deal manifest (`client prepare-legacy-repair`)
+    is used by both downloaders unless --host is given.
 
     DEAL_ID - The ID of the deal to download pieces for.
 
@@ -458,12 +467,17 @@ def onboard_data(ctx,
 
     parsed_url = commands_utils.validate_and_parse_url(host or deal.data.manifest_location)
     download_host = f"{parsed_url.scheme or 'http'}://{parsed_url.hostname}:{port}"
+    repair_source = get_manifest_repair_source(manifest)
+
+    if not host and repair_source:
+        click.echo(f"Using repair source from the deal manifest: {repair_source}")
+        download_host = repair_source
 
     if downloader == "auto":
-        downloader = _choose_downloader(pieces_to_download if not force else pieces, download_host)
+        downloader = _choose_downloader(pieces_to_download if not force else pieces, download_host, bool(repair_source and not host))
 
     if downloader == "lpr":
-        if not host:
+        if not host and not repair_source:
             download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
 
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,

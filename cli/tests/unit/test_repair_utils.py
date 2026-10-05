@@ -7,6 +7,7 @@ import click
 import pytest
 
 from cli.commands import repair_utils
+from cli.commands import utils as commands_utils
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
 
 GIB = 2 ** 30
@@ -62,6 +63,41 @@ def test_discover_falls_back_to_on_chain_multiaddrs(monkeypatch):
     monkeypatch.setattr(repair_utils, "Web3Service", lambda: SimpleNamespace(w3=lambda: SimpleNamespace(provider=SimpleNamespace(make_request=lambda m, p: {"result": miner_info}))))
     monkeypatch.setattr(repair_utils.requests, "get", lambda url, timeout: SimpleNamespace(ok=False, text=""))
     assert repair_utils.discover_provider_http_bases(1234) == ["https://chain.example:443"]
+
+
+def _super_manifest(sizes: list[int]) -> dict:
+    cids = [f"baga{i}" for i in range(len(sizes))]
+    return {"@spec": "https://example/spec", "uuid": "dataset-uuid", "name": "Rare Planes",
+            "pieces": [{"piece_cid": cid, "payload_cid": "bafy"} for cid in cids],
+            "contents": [{"@type": "file", "name": f"{cid}.car", "byte_length": size, "piece_cid": cid} for cid, size in zip(cids, sizes)]}
+
+
+def test_super_manifest_conversion_produces_a_valid_manifest():
+    manifest = repair_utils.to_legacy_repair_manifest(_super_manifest([32_849_050_527, 18_801_996, 6_730_000_000]), "https://sp.example:8787/")
+    pieces = manifest[0]["pieces"]
+
+    assert manifest[0][repair_utils.REPAIR_SOURCE_KEY] == "https://sp.example:8787"
+    assert [p["pieceType"] for p in pieces] == ["data", "dag", "data"]  # the smallest piece is the DAG piece
+    assert [p["pieceSize"] for p in pieces] == [34_359_738_368, 33_554_432, 8_589_934_592]
+    assert pieces[0]["storagePath"] == "baga0.car" and pieces[0]["fileSize"] == 32_849_050_527
+    assert commands_utils._validate_manifest(manifest, quiet=True) == manifest
+
+
+@pytest.mark.parametrize("super_manifest", [
+    {**_super_manifest([10, 20]), "contents": []},  # no CAR entries
+    _super_manifest([10]),  # no data piece besides the DAG piece
+    {**_super_manifest([10, 20]), "contents": [{"name": "baga0.car", "byte_length": "10", "piece_cid": "baga0"}]},  # non-integer size
+])
+def test_unsupported_super_manifests_are_refused(super_manifest):
+    with pytest.raises(click.ClickException):
+        repair_utils.to_legacy_repair_manifest(super_manifest, "https://sp.example")
+
+
+def test_cli_format_manifest_passes_through_with_the_repair_source(tmp_path):
+    manifest = [{"pieces": [{"pieceCid": "a"}]}]
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    assert repair_utils.to_legacy_repair_manifest(repair_utils.load_manifest_json(str(path)), "https://sp.example")[0]["repairSource"] == "https://sp.example"
 
 
 def _view(deal_id, provider, manifest_hash=b"h", state=PoRepMarketDealState.ACTIVE, deal_type=PoRepMarketDealType.PUBLIC):
