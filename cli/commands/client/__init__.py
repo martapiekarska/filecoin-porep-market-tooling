@@ -8,6 +8,7 @@ from .make_allocations import make_allocations
 from .pay_repair_retrieval import pay_repair_retrieval
 from .prepare_legacy_repair import prepare_legacy_repair
 from .propose_deal import propose_deal, propose_deal_mocked
+from .repair import repair
 from .sign_retrieval_voucher import sign_retrieval_voucher
 from .validate_manifest import validate_manifest
 from .withdraw_from_filecoinpay import withdraw_from_filecoinpay
@@ -29,5 +30,6 @@ client.add_command(deposit_for_whole_deal)
 client.add_command(make_allocations)
 client.add_command(withdraw_from_filecoinpay)
 client.add_command(sign_retrieval_voucher)
+client.add_command(repair)
 client.add_command(pay_repair_retrieval)
 client.add_command(prepare_legacy_repair)

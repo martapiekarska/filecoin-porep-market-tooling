@@ -225,7 +225,7 @@ The dry run signs with a throwaway key that is deleted afterwards, so clients ne
 
 **How the retrieval payment works:** the LPR `sp-proxy` only accepts a Filecoin Pay one-time rail payment whose payer is
 the wallet that signs the retrieval request, i.e. the wallet that downloads. So the client cannot pay the healthy SP
-on the new SP's behalf. Instead, `client propose-deal --repair` (or `client pay-repair-retrieval`) makes a one-off
+on the new SP's behalf. Instead, `client repair` (or `client pay-repair-retrieval`) makes a one-off
 FileCoinPay `deposit` of the retrieval cost **into the FileCoinPay account of the new deal's SP payee**. That is the
 payee address the SP registered with `sp register-sp --payee-address`, recorded on-chain in the deal. The new SP runs
 LPR `retrieval-client` with the payee key, and it spends available FileCoinPay funds before using any wallet balance,
@@ -240,25 +240,27 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
    `--price-usdfc-per-gb` rate, following [LPR for storage providers](https://github.com/fidlabs/large-paid-retrievals#for-storage-providers).
    As LPR requires, its advertised HTTP endpoint must point at the `sp-proxy`.
 
-2. **Client:** install LPR `retrieval-client` as in step 3 (only for quotes; it never gets a client key), then propose
-   the new deal with `--repair`, from the repaired deal's manifest URL:
+2. **Client:** install LPR `retrieval-client` as in step 3 (only for quotes; it never gets a client key), then run:
 
    ```bash
-   python3 ./porep_tooling_cli.py client propose-deal <repaired-deal-manifest-url> ... \
-     --repair \
-     --repair-of <repaired-deal-id>
+   python3 ./porep_tooling_cli.py client repair <repaired-deal-id>
    ```
 
-   This checks the manifest matches the repaired deal, finds the healthy SP and shows its quoted repair cost before
-   the proposal is confirmed. The deal is then proposed and matched to an SP **exactly like any other deal**: clients
-   can't choose the SP. Once that SP has accepted the deal, the cost is deposited into its payee account. The deposit
-   can only be returned by the SP, so it is never made for a deal that is still only proposed; if the deal isn't
-   accepted yet, the command says to run `client pay-repair-retrieval` later. Continue with `client init-deal` and
-   `client make-allocations` as usual.
+   This finds the healthy SP and shows its quoted repair cost, then proposes a new deal for the same manifest with the
+   repaired deal's terms (`--price-per-tib-per-month` / `--duration-months` override them). The deal is matched to an
+   SP **exactly like any other deal**: clients can't choose the SP. The command waits a few minutes
+   (`--wait-minutes`) for that SP to accept, deposits the retrieval cost into its payee account, and runs
+   `client init-deal` and `client make-allocations`. The deposit can only be returned by the SP, so it is never made
+   for a deal that is still only proposed.
 
-   `--repair-source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain.
+   The command is resumable: it finds its repair deal on-chain (same client and manifest, another SP, proposed after
+   the repaired deal and not yet ACTIVE) and continues from wherever it stopped, e.g. when the SP accepted after the
+   wait or a step failed, without proposing or depositing twice. Once a later deal for the dataset is ACTIVE it
+   reports the repair as done (`--propose-new` overrides, e.g. when that deal repaired another copy).
+
+   `--source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain.
    `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit step on its own, e.g. to
-   retry it, once the deal is accepted, or to top it up when the new SP reports a shortfall.
+   top it up when the new SP reports a shortfall.
 
    Before depositing, the CLI checks the client's earlier deposits to that payee since the deal was proposed. If they
    already cover the cost it refuses (`--allow-repeat-deposit` overrides, e.g. when they were for another deal with the
@@ -313,7 +315,7 @@ supplies the dataset's original manifest and the healthy source, and nothing is 
    checks the source serves the data at the expected sizes and shows the estimated retrieval cost.
 
 2. **Client:** host the written manifest at any URL and propose the deal. The SP is matched like for any other deal, and
-   the retrieval cost is paid into its payee account as for `--repair`:
+   the retrieval cost is paid into its payee account as for `client repair`:
 
    ```bash
    python3 ./porep_tooling_cli.py client propose-deal <hosted-repair-manifest-url> ... \
@@ -335,8 +337,8 @@ client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only 
 Limitations:
 
 - Only deals paid in **USDFC** can be repaired: LPR `sp-proxy`s settle retrievals in USDFC, and the client's deposit and the
-  new SP's retrieval use the deal's payment token. `propose-deal --repair` and `pay-repair-retrieval` refuse other
-  tokens. USDFC is the chain's known USDFC address, or `SP_PROXY_PAY_TOKEN_ADDRESS` on local devnets (the same variable
+  new SP's retrieval use the deal's payment token. `client repair`, `propose-deal --repair-legacy` and
+  `pay-repair-retrieval` refuse other tokens. USDFC is the chain's known USDFC address, or `SP_PROXY_PAY_TOKEN_ADDRESS` on local devnets (the same variable
   `retrieval-client` reads).
 - LPR currently lets only the deal owner retrieve **private** deals, so only **public** deals can be repaired. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.

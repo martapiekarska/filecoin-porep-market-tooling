@@ -38,7 +38,7 @@ def pay_repair_retrieval(deal_id: int,
 
     DEAL_ID must be ACCEPTED or ACTIVE: the deposit can only be returned by the SP, so it waits for the SP to
     accept the deal. This is separate from and in addition to the regular deal payment (`client init-deal`).
-    The same step runs as part of `client propose-deal --repair` / `--repair-legacy`.
+    The same step runs as part of `client repair` and `client propose-deal --repair-legacy`.
 
     DEAL_ID - The new (repair) deal ID.
     """

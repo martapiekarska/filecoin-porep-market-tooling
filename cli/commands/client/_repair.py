@@ -42,7 +42,7 @@ def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
 
 # Fails closed: a repeat deposit can only be recovered by the SP returning it. Returns the amount to deposit.
 def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: int, cost: int, token_decimals: int, token_symbol: str,
-                             allow_unverified_history: bool, allow_repeat_deposit: bool) -> int:
+                             allow_unverified_history: bool, allow_repeat_deposit: bool, covered_is_done: bool = False) -> int:
     #
     def amount_str(amount: int) -> str:
         return f"{base_units_str(amount, token_decimals)} {token_symbol}"
@@ -63,6 +63,12 @@ def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: 
         return cost
 
     if previous >= cost:
+        # resuming `client repair`: the deposit was made on an earlier run
+        if covered_is_done and not allow_repeat_deposit:
+            click.echo(f"\n{amount_str(previous)} already deposited to {payee} since the deal was proposed, covering the "
+                       f"{amount_str(cost)} repair cost; nothing more to deposit.")
+            return 0
+
         if not allow_repeat_deposit:
             raise click.ClickException(f"{amount_str(previous)} were already deposited from {client_address()} to {payee} since the deal "
                                        f"was proposed, covering the {amount_str(cost)} repair cost; not depositing again. If those deposits "
@@ -109,7 +115,8 @@ def pay_repair_retrieval(deal_id: int,
                          source_url: str | None = None,
                          source: RetrievalSource | None = None,
                          allow_unverified_history: bool = False,
-                         allow_repeat_deposit: bool = False):
+                         allow_repeat_deposit: bool = False,
+                         covered_is_done: bool = False):
     #
     Web3Service().wait_for_pending_transactions(client_address())
 
@@ -171,7 +178,10 @@ def pay_repair_retrieval(deal_id: int,
                f"  Client token balance: {token_balance_str} {token_symbol}")
 
     deposit = _check_previous_deposits(token.address(), payee, deal.deal.proposed_at_epoch, cost, token_decimals, token_symbol,
-                                       allow_unverified_history, allow_repeat_deposit)
+                                       allow_unverified_history, allow_repeat_deposit, covered_is_done)
+    if deposit == 0:
+        return
+
     deposit_str = base_units_str(deposit, token_decimals)
 
     if token_balance < deposit:
