@@ -15,6 +15,7 @@ from cli.commands.repair_utils import (
     ensure_secret_file,
     find_healthy_source,
     get_manifest_repair_source,
+    get_retrieval_client_path,
     repair_payment_token,
     resolve_repair_payee,
 )
@@ -47,29 +48,6 @@ def _get_aria2c_path() -> str:
         raise click.ClickException(f"{aria2c_path} not found:\n{e}") from e
 
     return str(aria2c_path)
-
-
-def _get_retrieval_client_path() -> str:
-    retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
-
-    if retrieval_client_path != "retrieval-client":
-        retrieval_client_path = Path(retrieval_client_path).resolve()
-
-    # noinspection PyBroadException
-    try:
-        subprocess.run([retrieval_client_path, "fetch", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
-        click.echo("retrieval-client not found. Please install large-paid-retrievals retrieval-client to use --downloader lpr.\n"
-                   "See https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers for installation instructions:\n"
-                   "  git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals && "
-                   "go build -o bin/retrieval-client ./cmd/retrieval-client\n"
-                   "Set the RETRIEVAL_CLIENT_PATH environment variable if retrieval-client is installed but not in PATH.\n")
-
-        raise click.ClickException(f"{retrieval_client_path} not found:\n{e}") from e
-
-    return str(retrieval_client_path)
 
 
 def _echo_download_summary(pieces: list[dict], no_summary: bool):
@@ -194,7 +172,7 @@ def _download_with_lpr(ctx,
                        payee_key_file: str | None,
                        claim_allocations: str | None):
     #
-    retrieval_client_path = _get_retrieval_client_path()
+    retrieval_client_path = get_retrieval_client_path()
     _ensure_payee_key(deal, payee_key_file)
     cid_file = _write_lpr_cid_file(pieces, download_host, output_dir, no_summary)
 

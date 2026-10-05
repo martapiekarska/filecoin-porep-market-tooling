@@ -4,6 +4,9 @@ import json
 import logging
 import os
 import re
+import secrets
+import subprocess
+import tempfile
 from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 
@@ -106,6 +109,100 @@ def ensure_secret_file(path: Path, description: str):
 
     if problem:
         raise click.ClickException(f"Refusing to use {description}: {problem}")
+
+
+def get_retrieval_client_path() -> str:
+    retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
+
+    if retrieval_client_path != "retrieval-client":
+        retrieval_client_path = Path(retrieval_client_path).resolve()
+
+    # noinspection PyBroadException
+    try:
+        subprocess.run([retrieval_client_path, "fetch", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        click.echo("retrieval-client not found. Please install large-paid-retrievals retrieval-client: the repair flow uses it for quotes and downloads.\n"
+                   "See https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers for installation instructions:\n"
+                   "  git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals && "
+                   "go build -o bin/retrieval-client ./cmd/retrieval-client\n"
+                   "Set the RETRIEVAL_CLIENT_PATH environment variable if retrieval-client is installed but not in PATH.\n")
+
+        raise click.ClickException(f"{retrieval_client_path} not found:\n{e}") from e
+
+    return str(retrieval_client_path)
+
+
+class SourceUnavailable(Exception):
+    pass
+
+
+@utils.json_dataclass()
+class RetrievalQuote:
+    total: Decimal  # USDFC for all paid pieces, as quoted by the source's sp-proxy
+    paid_pieces: int
+    free_pieces: int
+
+
+# `retrieval-client fetch --dry-run` summary (LPR fetch_quote.go, identical in main and v1-maintenance); the per-piece table
+# truncates CIDs, so only the totals are read, and the piece count must match what was asked for
+_QUOTE_TOTAL = re.compile(r"^Total: ([0-9.]+) USDFC for (\d+) paid piece\(s\)(?:; (\d+) free)?\.\s*$", re.MULTILINE)
+_QUOTE_ALL_FREE = re.compile(r"^All (\d+) piece\(s\) are free;", re.MULTILINE)
+RETRIEVAL_CLIENT_QUOTE_TIMEOUT_SECONDS = 3600
+
+
+def parse_dry_run_quote(output: str, expected_pieces: int) -> RetrievalQuote:
+    total_match = _QUOTE_TOTAL.search(output)
+    free_match = _QUOTE_ALL_FREE.search(output)
+
+    if total_match:
+        quote = RetrievalQuote(total=Decimal(total_match.group(1)), paid_pieces=int(total_match.group(2)),
+                               free_pieces=int(total_match.group(3) or 0))
+    elif free_match:
+        quote = RetrievalQuote(total=Decimal(0), paid_pieces=0, free_pieces=int(free_match.group(1)))
+    else:
+        raise ValueError("no quote summary in retrieval-client output")
+
+    if quote.paid_pieces + quote.free_pieces != expected_pieces:
+        raise ValueError(f"quote covers {quote.paid_pieces + quote.free_pieces} piece(s), expected {expected_pieces}")
+
+    return quote
+
+
+# Exact quote for every piece from the source, via `retrieval-client fetch --dry-run` (no transactions, no downloads).
+# fetch always loads a key, so a throwaway one is used: it only identifies the requester to public deals' sp-proxies.
+def quote_retrieval(base_url: str, piece_cids: list[str]) -> RetrievalQuote:
+    retrieval_client_path = get_retrieval_client_path()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        key_file = Path(tmp) / "throwaway.key"
+        key_file.write_text(secrets.token_hex(32), encoding="utf-8")
+        key_file.chmod(0o600)
+
+        cid_file = Path(tmp) / "cids.txt"
+        cid_file.write_text("\n".join(piece_cids) + "\n", encoding="utf-8")
+
+        command = [retrieval_client_path, "fetch", "--dry-run", "--no-progress",
+                   "--sp-base-url", base_url,
+                   "--cid-file", str(cid_file),
+                   "--out-dir", tmp,
+                   "--filpay-private-key-file", str(key_file)]
+
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=RETRIEVAL_CLIENT_QUOTE_TIMEOUT_SECONDS,
+                                    env=child_env(), check=False)
+        except subprocess.TimeoutExpired as e:
+            raise SourceUnavailable(f"retrieval-client quote timed out after {RETRIEVAL_CLIENT_QUOTE_TIMEOUT_SECONDS} s") from e
+
+    if result.returncode != 0:
+        detail = (result.stderr.strip() or result.stdout.strip()).splitlines()[-1:] or [f"exit code {result.returncode}"]
+        raise SourceUnavailable(detail[0])
+
+    try:
+        return parse_dry_run_quote(result.stdout, len(piece_cids))
+    except ValueError as e:
+        raise SourceUnavailable(f"unexpected retrieval-client output: {e}") from e
 
 
 @utils.json_dataclass()
