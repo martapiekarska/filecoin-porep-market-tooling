@@ -6,8 +6,6 @@ from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
 from cli.commands.repair_utils import (
-    AMOUNT_PRECISION,
-    GIB_BYTES,
     RetrievalSource,
     find_healthy_source,
     get_manifest_repair_source,
@@ -37,29 +35,11 @@ LOGS_BLOCK_RANGE = 2000  # initial eth_getLogs block range (LOGS_BLOCK_RANGE env
 MIN_LOGS_BLOCK_RANGE = 50  # below this, give up and fail closed
 
 
-# Mirrors large-paid-retrievals sp-proxy pricing (README "Pricing"): each piece is billed per binary GiB, rounded up.
-# The price per GiB is read from the healthy SP's quotes; sizes come from the manifest fileSize (sample pieces are checked
-# against the SP when the source is probed).
-def estimate_retrieval_cost(pieces: list[dict], price_per_gib_wei: int) -> int:
-    without_file_size = [piece["pieceCid"] for piece in pieces if not piece.get("fileSize")]
-
-    if without_file_size:
-        click.echo(f"WARNING: {len(without_file_size)} piece(s) have no fileSize; their padded pieceSize is used, which overestimates "
-                   f"their cost: {', '.join(without_file_size[:3])}{'...' if len(without_file_size) > 3 else ''}")
-
-    return sum(-(-(piece.get("fileSize") or piece["pieceSize"]) // GIB_BYTES) * price_per_gib_wei for piece in pieces)
-
-
-# a price per GiB derived from quotes may not be a whole number of base units; it is rounded up, never down
-def price_to_wei(price: Decimal, decimals: int) -> int:
+# quotes are decimal USDFC strings; deposits are base units (rounded up, so a deposit never falls short of the quote)
+def tokens_to_base_units(amount: Decimal, decimals: int) -> int:
     with localcontext() as ctx:
-        ctx.prec = AMOUNT_PRECISION
-        result = int(price.scaleb(decimals).to_integral_value(rounding=ROUND_CEILING))
-
-    if result != price.scaleb(decimals):
-        click.echo(f"Note: price {price}/GiB is not a whole number of base units; rounded up to {utils.str_from_wei(result, decimals)}/GiB")
-
-    return result
+        ctx.prec = 100
+        return int(amount.scaleb(decimals).to_integral_value(rounding=ROUND_CEILING))
 
 
 def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
@@ -169,7 +149,6 @@ PAYABLE_DEAL_STATES = (PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIV
 def pay_repair_retrieval(deal_id: int,
                          repair_of_deal_id: int | None = None,
                          source_url: str | None = None,
-                         price_per_gib: Decimal | None = None,
                          source: RetrievalSource | None = None,
                          allow_unverified_history: bool = False,
                          allow_repeat_deposit: bool = False):
@@ -205,26 +184,20 @@ def pay_repair_retrieval(deal_id: int,
         source_url = embedded_source
 
     # a source found before proposing is only reusable if the deal did not land with that same SP
-    if price_per_gib is None and (source is None or source.provider_id == deal.deal.provider_id):
+    if source is None or source.provider_id == deal.deal.provider_id:
         source = find_repair_source(deal, pieces, repair_of_deal_id, source_url)
 
-    if price_per_gib is None:
-        if source is None:
-            raise RuntimeError("No retrieval source resolved")
-
-        if source.is_free():
-            click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")
-            return
-
-        price_per_gib = source.price_per_gib
+    if source.is_free():
+        click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")
+        return
 
     payee = resolve_repair_payee(deal)
 
     token_decimals = token.decimals()
     token_symbol = token.symbol()
 
-    cost = estimate_retrieval_cost(pieces, price_to_wei(price_per_gib, token_decimals))
-    source_str = f" from {source.base_url}" + (f" (deal {source.deal_id}, provider {source.provider_id})" if source.deal_id else "") if source else ""
+    cost = tokens_to_base_units(source.quote.total, token_decimals)
+    source_str = f"{source.base_url}" + (f" (deal {source.deal_id}, provider {source.provider_id})" if source.deal_id else "")
 
     cost_str = utils.str_from_wei(cost, token_decimals)
 
@@ -233,9 +206,9 @@ def pay_repair_retrieval(deal_id: int,
 
     click.echo(f"\nRepair retrieval for deal ID {deal_id} (provider {deal.deal.provider_id}):\n"
                f"  Manifest: {deal.data.manifest_location}\n"
-               f"  Pieces: {len(pieces)}, billed per GiB rounded up per piece at {price_per_gib} {token_symbol}/GiB{source_str}\n"
-               f"  (estimate: assumes every piece is priced like the sampled ones)\n"
-               f"  Estimated retrieval cost: {cost_str} {token_symbol}\n"
+               f"  Source: {source_str}\n"
+               f"  Pieces: {len(pieces)} ({source.quote.paid_pieces} paid, {source.quote.free_pieces} free)\n"
+               f"  Retrieval cost quoted by the source: {cost_str} {token_symbol}\n"
                f"  Paid into the FileCoinPay account of the new SP's payee: {payee}\n"
                f"  Client token balance: {token_balance_str} {token_symbol}")
 

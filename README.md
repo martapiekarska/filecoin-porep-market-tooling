@@ -212,14 +212,16 @@ are shared and the client, the new SP and the healthy SP don't need to exchange 
 
 **Finding the healthy SP:** the CLI looks for other providers' deals for the same dataset (same manifest hash) that are
 ACTIVE, PUBLIC and have claims on-chain. It then checks each provider's advertised HTTP piece endpoint (cid.contact,
-else the miner's on-chain multiaddrs, as LPR does, plus Curio's market address) actually serves sample pieces of the
-expected size.
+else the miner's on-chain multiaddrs, as LPR does, plus Curio's market address) actually serves every piece of the
+dataset, using `retrieval-client fetch --dry-run`.
 Free sources are preferred, then the cheapest. Both the client and the new SP do this on their own.
 
-**Finding the price:** the healthy SP's LPR `sp-proxy` answers an unpaid piece request with `402 Payment Required` and
-an MPP challenge quoting the piece price ([protocol](https://github.com/fidlabs/large-paid-retrievals/blob/main/docs/mpp-filecoinpay.md)).
-The CLI reads the price per GiB from those quotes and applies LPR's pricing (`ceil(fileSize / GiB) × price` per piece)
-to the whole manifest. If the healthy SP serves the data for free, there is nothing to pay.
+**Finding the price:** the CLI runs LPR's `retrieval-client fetch --dry-run` for every piece of the dataset against each
+candidate source. The `sp-proxy` quotes each piece through its `402 Payment Required` MPP challenge
+([protocol](https://github.com/fidlabs/large-paid-retrievals/blob/main/docs/mpp-filecoinpay.md)) and the dry run sums
+those quotes without paying or downloading anything. If the healthy SP serves the data for free, there is nothing to pay.
+The dry run signs with a throwaway key that is deleted afterwards, so clients need `retrieval-client` installed too
+(see step 3 below), but no wallet key for it.
 
 **How the retrieval payment works:** the LPR `sp-proxy` only accepts a Filecoin Pay one-time rail payment whose payer is
 the wallet that signs the retrieval request, i.e. the wallet that downloads. So the client cannot pay the healthy SP
@@ -249,8 +251,7 @@ is separate from and in addition to the regular deal payment rail (`client init-
    accepted yet, the command says to run `client pay-repair-retrieval` later. Continue with `client init-deal` and
    `client make-allocations` as usual.
 
-   `--repair-source-url` and `--repair-price-per-gib` override the detected source and price, e.g. when no healthy SP
-   is advertised on-chain. `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit
+   `--repair-source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain. `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit
    step on its own, e.g. to retry it or once the deal is accepted.
 
    Before depositing, the CLI checks the client's earlier deposits to that payee since the deal was proposed. If they
@@ -327,13 +328,13 @@ Limitations:
   `retrieval-client` reads).
 - LPR currently lets only the deal owner retrieve **private** deals, so only **public** deals can be repaired. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.
-- Health is judged from on-chain deal state, claims and a live probe of sample pieces. The CLI does not check sector
+- Health is judged from on-chain deal state, claims and a dry-run quote of every piece. The CLI does not check sector
   faults or proving status directly.
-- LPR has no price endpoint, so the price is read from `402` quotes for sample pieces. Each probe makes the `sp-proxy`
-  store an unpaid quote, which it prunes after its retention period.
+- LPR has no price endpoint, so the price comes from a dry run that requests every piece. Each dry run makes the
+  `sp-proxy` store an unpaid quote per piece, which it prunes after its retention period.
 - The payee's FileCoinPay account also collects the SP's deal earnings, and LPR has no spend cap. If the `sp-proxy`
-  quotes more than the estimate, for example after a price change, `retrieval-client` covers the difference from
-  those funds or the payee wallet's USDFC.
+  quotes more than it did for the client's dry run, for example after a price change, `retrieval-client` covers the
+  difference from those funds or the payee wallet's USDFC.
 - LPR can't sign through a Lotus wallet, so the payee key must be available as a plain key file on the downloading host.
   The payee is also the account that receives your deal revenue, so this puts a high-value key on a machine that
   downloads third-party data: keep the file `chmod 600` and owned by the user running the CLI (`onboard-data` refuses it

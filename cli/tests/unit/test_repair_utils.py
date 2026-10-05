@@ -113,23 +113,25 @@ def test_find_healthy_source_prefers_free_and_skips_unusable_deals(monkeypatch):
              _view(5, 500, state=PoRepMarketDealState.FINALIZED),  # not active
              _view(6, 600),  # healthy, free
              _view(7, 700)]  # active but not serving
-    prices = {"https://p200": Decimal("0.02"), "https://p600": Decimal(0)}
+    quotes = {"https://p200": Decimal("0.02"), "https://p600": Decimal(0)}
     probed = []
 
-    def probe_source(base_url, pieces):
+    def quote_source(base_url, pieces):
         probed.append(base_url)
-        if base_url in prices:
-            return repair_utils.RetrievalSource(base_url=base_url, price_per_gib=prices[base_url]), "ok"
-        return None, "HTTP 500"
+        if base_url in quotes:
+            paid = 0 if quotes[base_url] == 0 else 1
+            quote = repair_utils.RetrievalQuote(total=quotes[base_url], paid_pieces=paid, free_pieces=1 - paid)
+            return repair_utils.RetrievalSource(base_url=base_url, quote=quote), "ok"
+        return None, "dataset incomplete: no usable source"
 
     monkeypatch.setattr(repair_utils, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_views=lambda: views))
     monkeypatch.setattr(repair_utils.commands_utils, "get_deal_claim_ids", lambda deal: [1])
     monkeypatch.setattr(repair_utils, "discover_provider_http_bases", lambda provider: [f"https://p{provider}"])
-    monkeypatch.setattr(repair_utils, "probe_source", probe_source)
+    monkeypatch.setattr(repair_utils, "quote_source", quote_source)
 
     source = repair_utils.find_healthy_source(b"h", [], exclude_provider_ids={100})
 
-    assert (source.deal_id, source.provider_id, source.price_per_gib) == (6, 600, 0)
+    assert (source.deal_id, source.provider_id, source.is_free()) == (6, 600, True)
     assert probed == ["https://p200", "https://p600", "https://p700"]
 
 

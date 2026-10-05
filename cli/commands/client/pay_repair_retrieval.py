@@ -1,9 +1,6 @@
-from decimal import Decimal
-
 import click
 
 from cli.commands.client import _repair
-from cli.commands.repair_utils import DecimalAmount
 from cli.services.self_update import SelfUpdateService
 
 
@@ -15,8 +12,6 @@ from cli.services.self_update import SelfUpdateService
 @click.option("--source-url",
               help="Override: base URL of the healthy SP's piece server / sp-proxy (e.g. https://sp.example.com:8787).  "
                    "[default: auto-detected from other providers' deals for the same dataset]")
-@click.option("--price-per-gib", type=DecimalAmount(min_open=True),
-              help="Override: retrieval price per GiB, in decimal units of DEAL_ID's payment token.  [default: quoted by the healthy SP]")
 @click.option("--allow-unverified-history", is_flag=True, default=False,
               help="Deposit even if earlier deposits to the payee can't be checked (RPC log limits); only after checking them yourself.  "
                    "[default: false]")
@@ -26,7 +21,6 @@ from cli.services.self_update import SelfUpdateService
 def pay_repair_retrieval(deal_id: int,
                          repair_of: int | None = None,
                          source_url: str | None = None,
-                         price_per_gib: Decimal | None = None,
                          allow_unverified_history: bool = False,
                          allow_repeat_deposit: bool = False):
     """
@@ -36,7 +30,7 @@ def pay_repair_retrieval(deal_id: int,
     1. Find the source of the data: the source embedded in DEAL_ID's manifest (legacy repair), --source-url,
        or a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal with the same manifest hash
        and claims on-chain, whose advertised piece endpoint serves the data),
-    2. read its retrieval price from its large-paid-retrievals sp-proxy quotes (nothing to pay if it serves for free),
+    2. get the source's exact quote for every piece with `retrieval-client fetch --dry-run` (nothing to pay if free),
     3. check earlier deposits from this client to the payee since DEAL_ID was proposed: refuse if they can't be
        checked or already cover the cost (see the --allow-* flags), deposit only the shortfall if they cover part,
     4. deposit into the FileCoinPay account of DEAL_ID's SP payee, so the new SP can pay the healthy SP without
@@ -51,5 +45,5 @@ def pay_repair_retrieval(deal_id: int,
 
     SelfUpdateService.check_and_prompt(manual=False)
 
-    _repair.pay_repair_retrieval(deal_id, repair_of, source_url, price_per_gib,
+    _repair.pay_repair_retrieval(deal_id, repair_of, source_url,
                                  allow_unverified_history=allow_unverified_history, allow_repeat_deposit=allow_repeat_deposit)

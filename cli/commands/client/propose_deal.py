@@ -1,14 +1,11 @@
 import sys
-from decimal import Decimal
 
 import click
 
-from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client import _repair
 from cli.commands.client._client import client_signer
-from cli.commands.repair_utils import DecimalAmount, ensure_usdfc, find_healthy_source, get_manifest_repair_source
-from cli.services.contracts.erc20_contract import ERC20Contract
+from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, find_healthy_source, get_manifest_repair_source
 from cli.services.contracts.porep_market import PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 from cli.services.contracts.usdc_token import USDCToken
@@ -54,9 +51,6 @@ from cli.services.web3_service import EthAddress
 @click.option("--repair-source-url",
               help="With --repair, override: base URL of the healthy SP's piece server / sp-proxy "
                    "[default: auto-detected from other providers' deals for the same dataset]. Required with --repair-legacy.")
-@click.option("--repair-price-per-gib", type=DecimalAmount(min_open=True),
-              help="With --repair / --repair-legacy, override: retrieval price in decimal --payment-token tokens per GiB.  "
-                   "[default: quoted by the healthy SP]")
 def propose_deal(manifest_url: str,
                  retrievability_pct: int,
                  bandwidth_mbps: int,
@@ -69,15 +63,14 @@ def propose_deal(manifest_url: str,
                  repair: bool = False,
                  repair_of: int | None = None,
                  repair_legacy: bool = False,
-                 repair_source_url: str | None = None,
-                 repair_price_per_gib: Decimal | None = None):
+                 repair_source_url: str | None = None):
     """
     Interactively propose a deal from MANIFEST_URL with the specified parameters.
 
     \b
     1. Fetch and validate manifest from a given MANIFEST_URL,
-    2. with --repair: find a healthy SP serving the repaired dataset and its retrieval price
-       (with --repair-legacy: check the given source and read its price),
+    2. with --repair: find a healthy SP serving the repaired dataset and its exact retrieval quote
+       (with --repair-legacy: check and quote the given source),
     3. prepare and confirm deal proposal details,
     4. propose deal on-chain via PoRep Market contract (the SP is matched as for any other deal),
     5. with --repair / --repair-legacy: once the matched SP has accepted the deal, deposit the one-off retrieval
@@ -90,8 +83,7 @@ def propose_deal(manifest_url: str,
     SelfUpdateService.check_and_prompt(manual=False)
 
     repair_options = {"--repair-of": repair_of,
-                      "--repair-source-url": repair_source_url,
-                      "--repair-price-per-gib": repair_price_per_gib}
+                      "--repair-source-url": repair_source_url}
     source = None
 
     if repair and repair_legacy:
@@ -114,10 +106,8 @@ def propose_deal(manifest_url: str,
             raise click.ClickException(f"Manifest at {manifest_url} has repair source {get_manifest_repair_source(manifest)!r}, "
                                        f"not {repair_source_url!r}; prepare it with `{sys.argv[0]} client prepare-legacy-repair`.")
 
-        if repair_price_per_gib is None:
-            source = find_healthy_source(b"", manifest[0]["pieces"], set(), repair_source_url)
-
-        _echo_repair_cost(manifest[0]["pieces"], repair_price_per_gib if repair_price_per_gib is not None else source.price_per_gib, payment_token)
+        source = find_healthy_source(b"", manifest[0]["pieces"], set(), repair_source_url)
+        _echo_repair_cost(source)
 
     elif repair:
         if repair_of is None:
@@ -133,11 +123,9 @@ def propose_deal(manifest_url: str,
                                        f"{repaired_deal.data.manifest_location}")
 
         # show the repair cost before the proposal is confirmed
-        if repair_price_per_gib is None:
-            source = find_healthy_source(repaired_deal.data.manifest_hash, manifest[0]["pieces"],
-                                         {repaired_deal.deal.provider_id}, repair_source_url)
-
-        _echo_repair_cost(manifest[0]["pieces"], repair_price_per_gib if repair_price_per_gib is not None else source.price_per_gib, payment_token)
+        source = find_healthy_source(repaired_deal.data.manifest_hash, manifest[0]["pieces"],
+                                     {repaired_deal.deal.provider_id}, repair_source_url)
+        _echo_repair_cost(source)
 
     elif any(value is not None for value in repair_options.values()):
         raise click.UsageError(f"{', '.join(name for name, value in repair_options.items() if value is not None)}: only valid with --repair / --repair-legacy")
@@ -155,8 +143,7 @@ def propose_deal(manifest_url: str,
 
     if repair or repair_legacy:
         overrides = (f" --repair-of {repair_of}" if repair_of is not None else "") + \
-                    (f" --source-url {repair_source_url}" if repair_source_url else "") + \
-                    (f" --price-per-gib {repair_price_per_gib}" if repair_price_per_gib is not None else "")
+                    (f" --source-url {repair_source_url}" if repair_source_url else "")
         retry_command = f"`{sys.argv[0]} client pay-repair-retrieval {deal_id or '<deal-id>'}{overrides}`"
 
         # e.g. the proposal ran as dry run after declining the final confirmation
@@ -170,14 +157,12 @@ def propose_deal(manifest_url: str,
             return
 
         click.echo(f"\nFunding repair retrieval for deal ID {deal_id} (if this step fails, retry with {retry_command})")
-        _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, source=source)
+        _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, source=source)
 
 
-def _echo_repair_cost(pieces: list[dict], price_per_gib: Decimal, payment_token: str):
-    token = ERC20Contract(EthAddress.from_any(payment_token))
-    cost = _repair.estimate_retrieval_cost(pieces, _repair.price_to_wei(price_per_gib, token.decimals()))
-    click.echo(f"\nEstimated one-off repair retrieval cost, paid once the matched SP accepts the deal: "
-               f"{utils.str_from_wei(cost, token.decimals())} {token.symbol()}\n")
+def _echo_repair_cost(source: RetrievalSource):
+    click.echo(f"\nOne-off repair retrieval cost quoted by {source.base_url}, paid once the matched SP accepts the deal: "
+               f"{source.quote.total} USDFC for {source.quote.paid_pieces} paid piece(s)\n")
 
 
 @click.command(hidden=True)

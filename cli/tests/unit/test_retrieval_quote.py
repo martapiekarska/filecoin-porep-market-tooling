@@ -87,3 +87,10 @@ def test_wrong_piece_count_means_source_unavailable(fake_client):
     fake_client(stdout=PAID)
     with pytest.raises(repair_utils.SourceUnavailable, match="unexpected retrieval-client output"):
         repair_utils.quote_retrieval("https://sp.example", ["a"])
+
+
+def test_private_source_addresses_are_refused_before_quoting(monkeypatch):
+    monkeypatch.delenv("ALLOW_PRIVATE_MANIFEST_URLS", raising=False)
+    monkeypatch.setattr(repair_utils, "quote_retrieval", lambda *a: pytest.fail("must not quote a private address"))
+    source, reason = repair_utils.quote_source("http://127.0.0.1:8787", [{"pieceCid": "a"}])
+    assert source is None and "disallowed" in reason

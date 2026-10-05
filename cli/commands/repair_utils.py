@@ -7,7 +7,7 @@ import re
 import secrets
 import subprocess
 import tempfile
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal
 from pathlib import Path
 
 import click
@@ -29,14 +29,11 @@ from cli.services.web3_service import ActorId, EthAddress, Web3Service
 #
 # Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
 # deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
-# sample pieces of the expected size. The price comes from the LPR sp-proxy `402` challenge for those pieces
-# (https://github.com/fidlabs/large-paid-retrievals/blob/main/docs/mpp-filecoinpay.md); a `200` means free.
+# every piece: checked, and priced, with `retrieval-client fetch --dry-run` (LPR's own quotes; free pieces cost nothing).
 
 logger = logging.getLogger(__name__)
 
-GIB_BYTES = 2 ** 30
 CID_CONTACT_URL = "https://cid.contact"
-PROBE_SAMPLE_PIECES = 2
 PROBE_TIMEOUT_SECONDS = 30
 
 # multiaddr protocol codes needed to find HTTP endpoints: code -> (name, value size in bytes, 0 = none, -1 = varint-prefixed)
@@ -45,35 +42,6 @@ _MULTIADDR_PROTOCOLS = {4: ("ip4", 4), 41: ("ip6", 16), 53: ("dns", -1), 54: ("d
 
 # /<host proto>/<host>/tcp/<port>/<transport>; Curio advertises its market HTTP server as libp2p (w)ss on the same host:port
 _HTTP_MULTIADDR = re.compile(r"^/(?:ip4|ip6|dns|dns4|dns6)/([^/]+)/tcp/(\d+)/(http|https|tls/http|wss|ws)(?:/|$)")
-
-
-AMOUNT_PRECISION = 100  # significant digits for repair price arithmetic; uint256 has at most 78
-
-
-# Repair prices are parsed from the user's text as Decimal, never as binary floats
-class DecimalAmount(click.ParamType):
-    name = "decimal"
-
-    def __init__(self, min_value: Decimal | int = 0, min_open: bool = False):
-        self.min_value = Decimal(min_value)
-        self.min_open = min_open
-
-    def convert(self, value, param, ctx) -> Decimal:
-        if isinstance(value, Decimal):
-            result = value
-        else:
-            try:
-                result = Decimal(str(value).strip())
-            except InvalidOperation:
-                self.fail(f"{value!r} is not a decimal number", param, ctx)
-
-        if not result.is_finite():
-            self.fail(f"{value!r} is not a finite number", param, ctx)
-
-        if result < self.min_value or (self.min_open and result == self.min_value):
-            self.fail(f"{value} is not {'>' if self.min_open else '>='} {self.min_value}", param, ctx)
-
-        return result
 
 
 _SECRET_ENV_VAR = re.compile(r"(PRIVATE_KEY|LOTUS_TOKEN|DATABASE_URL)$")
@@ -209,19 +177,18 @@ def quote_retrieval(base_url: str, piece_cids: list[str]) -> RetrievalQuote:
 class PieceProbe:
     status: str  # free | paid | private | unavailable
     size_bytes: int | None = None
-    price: Decimal | None = None  # total quoted price for the piece, in decimal tokens
     detail: str | None = None
 
 
 @utils.json_dataclass()
 class RetrievalSource:
     base_url: str
-    price_per_gib: Decimal  # 0 when the source serves for free
+    quote: RetrievalQuote  # exact quote for all pieces, from retrieval-client
     deal_id: int | None = None  # None for a manually given source URL
     provider_id: ActorId | None = None
 
     def is_free(self) -> bool:
-        return self.price_per_gib == 0
+        return self.quote.paid_pieces == 0
 
 
 def _read_varint(data: bytes, offset: int) -> tuple[int, int]:
@@ -310,16 +277,6 @@ def discover_provider_http_bases(provider_id: ActorId) -> list[str]:
     return list(dict.fromkeys(bases))
 
 
-def _parse_payment_challenge(www_authenticate: str) -> dict:
-    match = re.search(r'request="([^"]+)"', www_authenticate)
-
-    if not www_authenticate.startswith("Payment") or not match:
-        raise ValueError(f"not an MPP Payment challenge: {www_authenticate!r}")
-
-    encoded = match.group(1)
-    return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
-
-
 def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
     url = f"{base_url}/piece/{piece_cid}"
 
@@ -340,56 +297,31 @@ def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
                 return PieceProbe(status="free", size_bytes=size)
 
             if resp.status_code == 402:
-                challenge = _parse_payment_challenge(resp.headers.get("WWW-Authenticate", ""))
-                price = Decimal(challenge["price_usdfc"])
-
-                if not price.is_finite() or price < 0:
-                    raise ValueError(f"invalid quoted price {challenge['price_usdfc']!r}")
-
-                return PieceProbe(status="paid", size_bytes=size, price=price)
+                return PieceProbe(status="paid", size_bytes=size)
 
             if resp.status_code == 403:
                 return PieceProbe(status="private", detail="403 Forbidden")
 
             return PieceProbe(status="unavailable", detail=f"HTTP {resp.status_code}")
 
-    # any malformed SP response (bad header, JSON, number, ...) makes the source unavailable rather than crashing the CLI
-    except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, ArithmeticError) as e:
+    # any malformed SP response makes the source unavailable rather than crashing the CLI
+    except (requests.RequestException, ValueError) as e:
         return PieceProbe(status="unavailable", detail=str(e))
 
 
-def _sample_pieces(pieces: list[dict]) -> list[dict]:
-    return pieces[:PROBE_SAMPLE_PIECES]
+# exact quote for every piece at base_url, or None with the reason the source can't serve the dataset
+def quote_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | None, str]:
+    try:
+        commands_utils.validate_and_parse_url(base_url)  # same private-address guard as for manifests: endpoints are advertised by SPs
+    except (click.ClickException, OSError) as e:
+        return None, str(e)
 
+    try:
+        quote = quote_retrieval(base_url, [piece["pieceCid"] for piece in pieces])
+    except SourceUnavailable as e:
+        return None, str(e)
 
-# probes sample pieces at base_url; returns the source with its price per GiB, or None with a reason
-def probe_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | None, str]:
-    prices_per_gib = set()
-
-    for piece in _sample_pieces(pieces):
-        probe = probe_piece(base_url, piece["pieceCid"])
-
-        if probe.status in ("private", "unavailable"):
-            return None, f"piece {piece['pieceCid']}: {probe.status} ({probe.detail})"
-
-        if probe.size_bytes is not None and probe.size_bytes != piece["fileSize"]:
-            return None, f"piece {piece['pieceCid']}: size {probe.size_bytes} != manifest fileSize {piece['fileSize']}"
-
-        if probe.status == "paid":
-            if not probe.size_bytes:
-                return None, f"piece {piece['pieceCid']}: paid but size unknown"
-
-            # LPR sp-proxy price = price per GiB * GiB rounded up
-            with localcontext() as ctx:
-                ctx.prec = AMOUNT_PRECISION
-                prices_per_gib.add(probe.price / -(-int(probe.size_bytes) // GIB_BYTES))
-        else:
-            prices_per_gib.add(Decimal(0))
-
-    if len(prices_per_gib) > 1:
-        click.echo(f"WARNING: {base_url} quoted inconsistent prices per GiB {sorted(prices_per_gib)}; using the highest")
-
-    return RetrievalSource(base_url=base_url, price_per_gib=max(prices_per_gib)), "ok"
+    return RetrievalSource(base_url=base_url, quote=quote), "ok"
 
 
 def find_healthy_source(manifest_hash: bytes,
@@ -398,7 +330,7 @@ def find_healthy_source(manifest_hash: bytes,
                         source_url: str | None = None) -> RetrievalSource:
     #
     if source_url:
-        source, reason = probe_source(source_url.rstrip("/"), pieces)
+        source, reason = quote_source(source_url.rstrip("/"), pieces)
         if not source:
             raise click.ClickException(f"Source {source_url} is not serving the dataset: {reason}")
 
@@ -442,7 +374,7 @@ def find_healthy_source(manifest_hash: bytes,
             continue
 
         for base_url in bases:
-            source, reason = probe_source(base_url, pieces)
+            source, reason = quote_source(base_url, pieces)
 
             if source:
                 source.deal_id, source.provider_id = view.deal.deal_id, view.deal.provider_id
@@ -456,11 +388,11 @@ def find_healthy_source(manifest_hash: bytes,
         raise click.ClickException("No healthy SP found serving this dataset; pass a source URL explicitly if you know one")
 
     # same preference as LPR retrieval-client: free first, then cheapest
-    return min(sources, key=lambda s: s.price_per_gib)
+    return min(sources, key=lambda s: s.quote.total)
 
 
 def _price_str(source: RetrievalSource) -> str:
-    return "free" if source.is_free() else f"{source.price_per_gib} tokens/GiB"
+    return "free" if source.is_free() else f"{source.quote.total} USDFC for {source.quote.paid_pieces} paid piece(s)"
 
 
 # Shared by the client, who funds the repair retrieval, and the new SP, who spends it: both must use the same FileCoinPay
