@@ -18,7 +18,7 @@ from cli.services.web3_service import EthAddress
 @click.option("--output-file", type=click.Path(dir_okay=False),
               help="File to write the repair manifest to.  [default: repair_manifest_<dataset>.json]")
 @click.option("--payment-token", envvar="USDC_TOKEN",
-              help="ERC20 token used to show the estimated retrieval cost.  [default: USDC_TOKEN env var]")
+              help="ERC20 token to show the estimated retrieval cost in; use the token the repair deal will pay with.  [default: USDC_TOKEN env var]")
 def prepare_legacy_repair(original_manifest: str, repair_source_url: str, output_file: str | None = None, payment_token: str | None = None):
     """
     Prepare a manifest for a legacy (v1) dataset repair, with a manually chosen healthy source.

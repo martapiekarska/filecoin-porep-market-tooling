@@ -44,7 +44,8 @@ from cli.services.web3_service import EthAddress
               prompt="Enter IPNI indexing guarantee in percentage; 0 means \"don't care\"",
               help="IPNI indexing guarantee in percentage; 0 means \"don't care\".")
 @click.option("--repair", is_flag=True, default=False,
-              help="FCSS repair: also pay the one-off retrieval of the data from a healthy SP for the SP the deal is matched to.  [default: false]")
+              help="FCSS repair: also pay the one-off retrieval of the data from a healthy SP for the SP the deal is matched "
+                   "to, once that SP accepts the deal.  [default: false]")
 @click.option("--repair-of", type=click.IntRange(min=1),
               help="With --repair: deal ID being repaired; MANIFEST_URL must serve the same manifest (e.g. that deal's own manifest URL).")
 @click.option("--repair-legacy", is_flag=True, default=False,
@@ -79,8 +80,9 @@ def propose_deal(manifest_url: str,
        (with --repair-legacy: check the given source and read its price),
     3. prepare and confirm deal proposal details,
     4. propose deal on-chain via PoRep Market contract (the SP is matched as for any other deal),
-    5. with --repair / --repair-legacy: deposit the one-off retrieval cost into the FileCoinPay account of the
-       matched SP's payee (see `client pay-repair-retrieval`).
+    5. with --repair / --repair-legacy: once the matched SP has accepted the deal, deposit the one-off retrieval
+       cost into the FileCoinPay account of its payee (see `client pay-repair-retrieval`, which also does this later
+       if the deal is not accepted yet).
 
     MANIFEST_URL - URL of the deal manifest file to use.
     """
@@ -168,10 +170,10 @@ def propose_deal(manifest_url: str,
         _repair.pay_repair_retrieval(deal_id, repair_of, repair_source_url, repair_price_per_gib, source=source)
 
 
-def _echo_repair_cost(pieces: list[dict], price_per_gib, payment_token: str):
+def _echo_repair_cost(pieces: list[dict], price_per_gib: Decimal, payment_token: str):
     token = ERC20Contract(EthAddress.from_any(payment_token))
     cost = _repair.estimate_retrieval_cost(pieces, _repair.price_to_wei(price_per_gib, token.decimals()))
-    click.echo(f"\nEstimated one-off repair retrieval cost, paid after the deal is matched: "
+    click.echo(f"\nEstimated one-off repair retrieval cost, paid once the matched SP accepts the deal: "
                f"{utils.str_from_wei(cost, token.decimals())} {token.symbol()}\n")
 
 

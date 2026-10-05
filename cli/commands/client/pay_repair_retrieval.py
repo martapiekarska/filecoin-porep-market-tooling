@@ -16,7 +16,7 @@ from cli.services.self_update import SelfUpdateService
               help="Override: base URL of the healthy SP's piece server / sp-proxy (e.g. https://sp.example.com:8787).  "
                    "[default: auto-detected from other providers' deals for the same dataset]")
 @click.option("--price-per-gib", type=DecimalAmount(min_open=True),
-              help="Override: retrieval price in decimal tokens per GiB.  [default: quoted by the healthy SP]")
+              help="Override: retrieval price per GiB, in decimal units of DEAL_ID's payment token.  [default: quoted by the healthy SP]")
 @click.option("--allow-unverified-history", is_flag=True, default=False,
               help="Deposit even if earlier deposits to the payee can't be checked (RPC log limits); only after checking them yourself.  "
                    "[default: false]")
@@ -33,14 +33,18 @@ def pay_repair_retrieval(deal_id: int,
     One-off payment of a repair retrieval for a new SP.
 
     \b
-    1. Find a healthy SP still serving DEAL_ID's dataset: another provider's ACTIVE, PUBLIC deal with the same
-       manifest hash and claims on-chain, whose advertised piece endpoint serves the data,
+    1. Find the source of the data: the source embedded in DEAL_ID's manifest (legacy repair), --source-url,
+       or a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal with the same manifest hash
+       and claims on-chain, whose advertised piece endpoint serves the data),
     2. read its retrieval price from its large-paid-retrievals sp-proxy quotes (nothing to pay if it serves for free),
-    3. deposit the retrieval cost into the FileCoinPay account of DEAL_ID's SP payee, so the new SP can pay the
-       healthy SP without fronting the cost and without any client keys or off-chain coordination.
+    3. check earlier deposits from this client to the payee since DEAL_ID was proposed: refuse if they can't be
+       checked or already cover the cost (see the --allow-* flags), deposit only the shortfall if they cover part,
+    4. deposit into the FileCoinPay account of DEAL_ID's SP payee, so the new SP can pay the healthy SP without
+       fronting the cost and without any client keys or off-chain coordination.
 
-    This is separate from and in addition to the regular deal payment (`client init-deal`).
-    The same step runs as part of `client propose-deal --repair`.
+    DEAL_ID must be ACCEPTED or ACTIVE: the deposit can only be returned by the SP, so it waits for the SP to
+    accept the deal. This is separate from and in addition to the regular deal payment (`client init-deal`).
+    The same step runs as part of `client propose-deal --repair` / `--repair-legacy`.
 
     DEAL_ID - The new (repair) deal ID.
     """

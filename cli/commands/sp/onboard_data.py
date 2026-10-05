@@ -267,7 +267,8 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
               help="Host to use for .car files download.  [default: the manifest's repair source for legacy repairs, else same host "
                    "as manifest URL; with --downloader lpr: a healthy SP auto-detected from other providers' deals for the same dataset]")
 @click.option("--port", default=7777, type=click.IntRange(min=1, max=65535), show_default=True,
-              help="Port to use for .car files download.")
+              help="Port to use for .car files download from --host or the manifest URL host; not used when the source "
+                   "comes from the deal manifest (legacy repair) or is auto-detected (--downloader lpr).")
 @click.option("--force", is_flag=True, default=False,
               help="Force download even if all allocations are claimed.  [default: false]")
 @click.option("--no-summary", is_flag=True, default=False,
@@ -275,8 +276,8 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
 @click.option("--claim-allocations", type=click.Choice(["curio", "boost"], case_sensitive=False),
               help="Claim allocation(s) for each piece right after download using specified software.  [default: none]")
 @click.option("--downloader", type=click.Choice(["aria2", "lpr"], case_sensitive=False), default="aria2", show_default=True,
-              help="Downloader to use: aria2 for free HTTP piece servers, lpr for paid retrieval from a "
-                   "large-paid-retrievals sp-proxy (e.g. FCSS repair from a healthy SP).")
+              help="Downloader to use: aria2 for free HTTP piece servers, lpr for large-paid-retrievals retrieval-client, "
+                   "which pays sp-proxy quotes, also handles free servers and can auto-detect a healthy SP (FCSS repair).")
 @click.option("--payee-key-file", envvar="SP_PAYEE_KEY_FILE", show_envvar=True, type=click.Path(exists=True, dir_okay=False),
               help="With --downloader lpr: file with the private key of the deal's payee address (`sp register-sp --payee-address`), "
                    "passed to retrieval-client.  [default: FILPAY_PRIVATE_KEY env var]")
