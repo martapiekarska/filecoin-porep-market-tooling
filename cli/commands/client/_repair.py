@@ -5,6 +5,7 @@ import click
 from cli import utils
 from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
+from cli.commands.repair_funding import FundingHistoryUnavailable, get_repair_deposits
 from cli.commands.repair_utils import (
     RetrievalSource,
     find_healthy_source,
@@ -31,9 +32,6 @@ from cli.services.web3_service import EthAddress, Web3Service
 # repair manifest's embedded source. The deposit is only made once the SP has accepted the deal, and fails closed when
 # earlier deposits can't be checked (see _check_previous_deposits).
 
-LOGS_BLOCK_RANGE = 2000  # initial eth_getLogs block range (LOGS_BLOCK_RANGE env overrides); halved on each RPC error
-MIN_LOGS_BLOCK_RANGE = 50  # below this, give up and fail closed
-
 
 # quotes are decimal USDFC strings; deposits are base units (rounded up, so a deposit never falls short of the quote)
 def tokens_to_base_units(amount: Decimal, decimals: int) -> int:
@@ -50,40 +48,6 @@ def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
                                    f"it is not a repair of the same dataset.")
 
 
-class DepositHistoryUnavailable(Exception):
-    pass
-
-
-# The CLI keeps no local state, so previous repair deposits are found on-chain: client -> payee deposits since the deal was proposed.
-# RPC providers limit eth_getLogs block ranges differently, so the range starts at LOGS_BLOCK_RANGE (env) and is halved on
-# any error; errors a smaller range can't fix (e.g. a lookback limit for older deals) end in DepositHistoryUnavailable.
-def get_previous_repair_deposits(token: EthAddress, payee: EthAddress, since_block: int) -> int:
-    filecoin_pay = FileCoinPay()
-    latest_block = Web3Service().get_block_number()
-    block_range = utils.get_env_required("LOGS_BLOCK_RANGE", default=LOGS_BLOCK_RANGE, required_type=int)
-    start = since_block
-    total = 0
-
-    click.echo(f"\nChecking previous deposits to {payee} since epoch {since_block}...")
-
-    while start <= latest_block:
-        end = min(start + block_range - 1, latest_block)
-
-        # noinspection PyBroadException
-        try:
-            total += filecoin_pay.get_deposited_amount(token, client_address(), payee, start, end)
-            start = end + 1
-
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
-            block_range //= 2
-
-            if block_range < MIN_LOGS_BLOCK_RANGE:
-                raise DepositHistoryUnavailable(f"RPC could not serve deposit logs for epochs {start}-{end}: {e}") from e
-
-    return total
-
-
 # Fails closed: a repeat deposit can only be recovered by the SP returning it. Returns the amount to deposit.
 def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: int, cost: int, token_decimals: int, token_symbol: str,
                              allow_unverified_history: bool, allow_repeat_deposit: bool) -> int:
@@ -91,10 +55,12 @@ def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: 
     def amount_str(amount: int) -> str:
         return f"{utils.str_from_wei(amount, token_decimals)} {token_symbol}"
 
-    try:
-        previous = get_previous_repair_deposits(token, payee, since_block)
+    click.echo(f"\nChecking previous deposits to {payee} since epoch {since_block}...")
 
-    except DepositHistoryUnavailable as e:
+    try:
+        previous = get_repair_deposits(token, client_address(), payee, since_block)
+
+    except FundingHistoryUnavailable as e:
         if not allow_unverified_history:
             raise click.ClickException(f"Could not check earlier deposits to {payee}, so a double payment can't be ruled out: {e}\n"
                                        f"Use an RPC_URL that serves logs back to epoch {since_block}, or check the payee's deposits yourself "
