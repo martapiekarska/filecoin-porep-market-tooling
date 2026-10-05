@@ -18,7 +18,11 @@ from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView,
 from cli.services.contracts.sp_registry import SPRegistry
 from cli.services.web3_service import ActorId, EthAddress, Web3Service
 
-# FCSS repair: find a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges.
+# Shared code for the FCSS repair flow, used by the client commands and `sp onboard-data`:
+# - finding a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges,
+# - resolving the payee and token the repair retrieval is paid with (the same for client and SP),
+# - legacy (v1) repair manifests with an embedded source,
+# - small helpers: Decimal price options, child process environments, secret file checks.
 #
 # Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
 # deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
@@ -179,7 +183,8 @@ def http_base_from_multiaddr(addr: str) -> str | None:
     return f"{scheme}://{host}:{port}"
 
 
-# Same discovery as LPR retrieval-client (pieceurls): miner PeerId -> cid.contact provider addrs, else on-chain miner multiaddrs
+# Like LPR retrieval-client's discovery (pieceurls): miner PeerId -> cid.contact provider addrs, else on-chain miner multiaddrs.
+# Unlike LPR, Curio's (w)ss market address is also mapped to http(s) on the same host:port (see _HTTP_MULTIADDR).
 def discover_provider_http_bases(provider_id: ActorId) -> list[str]:
     response = Web3Service().w3().provider.make_request(RPCEndpoint("Filecoin.StateMinerInfo"), [str(provider_id), None])
 
@@ -428,8 +433,7 @@ def load_manifest_json(manifest_input: str) -> object:
 
 
 def _padded_piece_size(file_size: int) -> int:
-    # smallest power of two holding the FR32-expanded CAR (127 data bytes per 128-byte chunk)
-    # next power of two, at least the 128-byte minimum piece
+    # smallest power of two holding the FR32-expanded CAR (127 data bytes per 128-byte chunk), at least the 128-byte minimum piece
     return max(128, 1 << (-(-file_size * 128 // 127) - 1).bit_length())
 
 

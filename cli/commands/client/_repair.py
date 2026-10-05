@@ -29,14 +29,17 @@ from cli.services.web3_service import EthAddress, Web3Service
 # the payee is the SP wallet already recorded on-chain for the deal, and the LPR retrieval-client (run by the new SP
 # with the payee key) spends available FileCoinPay funds before touching the wallet. So the new SP never fronts the
 # retrieval cost, the client's exposure is capped at the deposited amount, and no keys or addresses are exchanged.
-# The healthy SP and its price are found automatically (see repair_utils.find_healthy_source).
+# The healthy SP and its price are found automatically (see repair_utils.find_healthy_source), or come from a legacy
+# repair manifest's embedded source. The deposit is only made once the SP has accepted the deal, and fails closed when
+# earlier deposits can't be checked (see _check_previous_deposits).
 
-LOGS_BLOCK_RANGE = 2000  # initial eth_getLogs block range, shrunk to the RPC provider limit if needed
-MIN_LOGS_BLOCK_RANGE = 50
+LOGS_BLOCK_RANGE = 2000  # initial eth_getLogs block range (LOGS_BLOCK_RANGE env overrides); halved on each RPC error
+MIN_LOGS_BLOCK_RANGE = 50  # below this, give up and fail closed
 
 
 # Mirrors large-paid-retrievals sp-proxy pricing (README "Pricing"): each piece is billed per binary GiB, rounded up.
-# The price per GiB is read from the healthy SP's quotes; sizes come from the manifest fileSize (checked against the SP).
+# The price per GiB is read from the healthy SP's quotes; sizes come from the manifest fileSize (sample pieces are checked
+# against the SP when the source is probed).
 def estimate_retrieval_cost(pieces: list[dict], price_per_gib_wei: int) -> int:
     without_file_size = [piece["pieceCid"] for piece in pieces if not piece.get("fileSize")]
 
