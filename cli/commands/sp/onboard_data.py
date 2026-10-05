@@ -233,11 +233,10 @@ AUTO_PROBE_PIECES = 3
 # through retrieval-client (which also handles free sources), from a healthy SP unless --host is given
 def _choose_downloader(pieces: list[dict], download_host: str) -> str:
     for piece in pieces[:AUTO_PROBE_PIECES]:
-        piece_name = piece["storagePath"].removesuffix(".car")  # the URL aria2 would fetch
-        probe = probe_piece(download_host, piece_name)
+        probe = probe_piece(download_host, piece["pieceCid"])  # the URL aria2 would fetch
 
         if probe.status != "free":
-            click.echo(f"{download_host} does not serve piece {piece_name} for free ({probe.detail or probe.status}); "
+            click.echo(f"{download_host} does not serve piece {piece['pieceCid']} for free ({probe.detail or probe.status}); "
                        f"downloading through retrieval-client (FCSS repair).")
             return "lpr"
 

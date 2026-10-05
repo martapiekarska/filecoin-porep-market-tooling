@@ -165,5 +165,5 @@ def test_auto_downloader_probes_the_urls_aria2_would_fetch(monkeypatch, statuses
     monkeypatch.setattr(od, "probe_piece", fake_probe)
     pieces = [piece(name) for name in ("p1", "p2", "p3", "p4")]
     assert od._choose_downloader(pieces, "http://client.example:7777") == expected
-    assert probed == [("http://client.example:7777", f"p{i}") for i in range(1, len(statuses) + 1)]
+    assert probed == [("http://client.example:7777", f"bagap{i}") for i in range(1, len(statuses) + 1)]
 
