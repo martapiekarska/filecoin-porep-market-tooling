@@ -212,7 +212,8 @@ are shared and the client, the new SP and the healthy SP don't need to exchange 
 
 **Finding the healthy SP:** the CLI looks for other providers' deals for the same dataset (same manifest hash) that are
 ACTIVE, PUBLIC and have claims on-chain. It then checks each provider's advertised HTTP piece endpoint (cid.contact,
-else the miner's on-chain multiaddrs, the same discovery LPR uses) actually serves sample pieces of the expected size.
+else the miner's on-chain multiaddrs, as LPR does, plus Curio's market address) actually serves sample pieces of the
+expected size.
 Free sources are preferred, then the cheapest. Both the client and the new SP do this on their own.
 
 **Finding the price:** the healthy SP's LPR `sp-proxy` answers an unpaid piece request with `402 Payment Required` and
@@ -243,13 +244,20 @@ is separate from and in addition to the regular deal payment rail (`client init-
 
    This checks the manifest matches the repaired deal, finds the healthy SP and shows the estimated repair cost before
    the proposal is confirmed. The deal is then proposed and matched to an SP **exactly like any other deal**: clients
-   can't choose the SP. Once it's matched, the cost is deposited into that SP's payee account. Continue with
-   `client init-deal` and `client make-allocations` as usual.
+   can't choose the SP. Once that SP has accepted the deal, the cost is deposited into its payee account. The deposit
+   can only be returned by the SP, so it is never made for a deal that is still only proposed; if the deal isn't
+   accepted yet, the command says to run `client pay-repair-retrieval` later. Continue with `client init-deal` and
+   `client make-allocations` as usual.
 
    `--repair-source-url` and `--repair-price-per-gib` override the detected source and price, e.g. when no healthy SP
    is advertised on-chain. `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit
-   step on its own, e.g. to retry it. It warns if the client already deposited to that payee since the deal was
-   proposed. This check is best effort: some RPC providers only serve the last 24h of logs.
+   step on its own, e.g. to retry it or once the deal is accepted.
+
+   Before depositing, the CLI checks the client's earlier deposits to that payee since the deal was proposed. If they
+   already cover the cost it refuses (`--allow-repeat-deposit` overrides, e.g. when they were for another deal with the
+   same SP); if they cover part of it, only the shortfall is deposited. If the RPC can't serve logs that old (some
+   providers only keep the last 24h), it refuses rather than risk paying twice: use an RPC that serves older logs, or
+   check the deposits yourself and pass `--allow-unverified-history`.
 
 3. **New SP:** build LPR `retrieval-client`
    ([for dataset consumers](https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers)), put it in `PATH`

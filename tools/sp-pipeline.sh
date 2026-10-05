@@ -10,7 +10,8 @@ readonly CLAIM_ALLOCATIONS_SOFTWARE="curio"
 readonly ONBOARD_DATA_DOWNLOADER="aria2"
 # readonly ONBOARD_DATA_DOWNLOADER="lpr"
 
-# Port of the piece server at the manifest URL host for aria2. Not used by lpr, which finds a healthy SP by itself.
+# Port of the piece server at the manifest URL host. Not used when the deal manifest carries a repair source (legacy
+# repair) or, with lpr, when the healthy SP is found automatically.
 readonly ONBOARD_DATA_PORT="7777"
 
 # With lpr: file with the private key of the SP payee address (the client funds its FileCoinPay account
