@@ -23,7 +23,6 @@ from cli.services.web3_service import ActorId, EthAddress, Web3Service
 # Shared code for the FCSS repair flow, used by the client commands and `sp onboard-data`:
 # - finding a "healthy" SP still serving a dataset, and the large-paid-retrievals (LPR) price it charges,
 # - resolving the payee and token the repair retrieval is paid with (the same for client and SP),
-# - small helpers: child process environments, secret file checks.
 #
 # Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
 # deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
