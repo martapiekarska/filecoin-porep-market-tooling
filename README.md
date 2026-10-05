@@ -232,11 +232,16 @@ LPR `retrieval-client` with the payee key, and it spends available FileCoinPay f
 so the new SP's download is paid by the client. The client's exposure is capped at the deposited amount; the deposit
 is separate from and in addition to the regular deal payment rail (`client init-deal`).
 
+**The deposit is the new SP's go-signal:** before a paid download, `sp onboard-data` quotes the pieces it still has to
+fetch and only starts once the client's deposits into the payee account, less what the payee has spent on retrievals
+since the deal was proposed, cover that quote. Both sides read this from chain, so there is nothing to coordinate.
+
 1. **Healthy SP:** if it charges for retrievals, it runs LPR `sp-proxy` in front of its piece server with a flat
    `--price-usdfc-per-gb` rate, following [LPR for storage providers](https://github.com/fidlabs/large-paid-retrievals#for-storage-providers).
    As LPR requires, its advertised HTTP endpoint must point at the `sp-proxy`.
 
-2. **Client:** propose the new deal with `--repair`, from the repaired deal's manifest URL:
+2. **Client:** install LPR `retrieval-client` as in step 3 (only for quotes; it never gets a client key), then propose
+   the new deal with `--repair`, from the repaired deal's manifest URL:
 
    ```bash
    python3 ./porep_tooling_cli.py client propose-deal <repaired-deal-manifest-url> ... \
@@ -244,15 +249,16 @@ is separate from and in addition to the regular deal payment rail (`client init-
      --repair-of <repaired-deal-id>
    ```
 
-   This checks the manifest matches the repaired deal, finds the healthy SP and shows the estimated repair cost before
+   This checks the manifest matches the repaired deal, finds the healthy SP and shows its quoted repair cost before
    the proposal is confirmed. The deal is then proposed and matched to an SP **exactly like any other deal**: clients
    can't choose the SP. Once that SP has accepted the deal, the cost is deposited into its payee account. The deposit
    can only be returned by the SP, so it is never made for a deal that is still only proposed; if the deal isn't
    accepted yet, the command says to run `client pay-repair-retrieval` later. Continue with `client init-deal` and
    `client make-allocations` as usual.
 
-   `--repair-source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain. `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit
-   step on its own, e.g. to retry it or once the deal is accepted.
+   `--repair-source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain.
+   `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit step on its own, e.g. to
+   retry it, once the deal is accepted, or to top it up when the new SP reports a shortfall.
 
    Before depositing, the CLI checks the client's earlier deposits to that payee since the deal was proposed. If they
    already cover the cost it refuses (`--allow-repeat-deposit` overrides, e.g. when they were for another deal with the
@@ -275,7 +281,11 @@ is separate from and in addition to the regular deal payment rail (`client init-
    ```
 
    The CLI finds the healthy SP itself (`--host` / `--port` override it), and checks that the key belongs to the
-   deal's payee before downloading. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
+   deal's payee before downloading. If the client's deposits don't cover the quote yet, it stops with
+   `Waiting for client funding: quote …, available …, short …` and the command the client runs to close the gap; run
+   `onboard-data` again once it is funded. If the RPC can't serve the deposit and payment logs since the deal was
+   proposed, it also stops rather than pay from the SP's own funds. `--allow-unfunded-retrieval` downloads anyway,
+   paying any difference from the payee's own funds. The payee must be a regular `0x` wallet, not a contract, with a little FIL for
    Filecoin Pay gas. `retrieval-client` gets the CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same
    FileCoinPay account the client funded, in USDFC. Works with `retrieval-client` built from LPR `main` or
    `v1-maintenance`. In `tools/sp-pipeline.sh`, set
@@ -332,9 +342,13 @@ Limitations:
   faults or proving status directly.
 - LPR has no price endpoint, so the price comes from a dry run that requests every piece. Each dry run makes the
   `sp-proxy` store an unpaid quote per piece, which it prunes after its retention period.
-- The payee's FileCoinPay account also collects the SP's deal earnings, and LPR has no spend cap. If the `sp-proxy`
-  quotes more than it did for the client's dry run, for example after a price change, `retrieval-client` covers the
-  difference from those funds or the payee wallet's USDFC.
+- The payee's FileCoinPay account also collects the SP's deal earnings, and LPR has no spend cap. The funding check
+  runs right before the download, so a price rise after the client's quote makes the new SP wait for a top-up; but if
+  the `sp-proxy` raises its price during the download itself, `retrieval-client` covers the difference from those
+  funds or the payee wallet's USDFC.
+- The funding check counts all of the client's deposits to the payee and all of the payee's retrieval payments since the
+  deal was proposed, so concurrent repairs between the same client and SP share one budget, and other paid retrievals
+  by the same payee in that window count against it.
 - LPR can't sign through a Lotus wallet, so the payee key must be available as a plain key file on the downloading host.
   The payee is also the account that receives your deal revenue, so this puts a high-value key on a machine that
   downloads third-party data: keep the file `chmod 600` and owned by the user running the CLI (`onboard-data` refuses it
