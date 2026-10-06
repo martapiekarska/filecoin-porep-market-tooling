@@ -210,3 +210,38 @@ def test_deposit_takes_the_repaired_deal_from_the_marker(monkeypatch):
     with pytest.raises(click.ClickException, match="stop here"):
         _repair.pay_repair_retrieval(11)
     assert checked == [10]
+
+
+@pytest.fixture
+def given(chain, monkeypatch):
+    monkeypatch.setattr(repair_module, "resolve_repair_payee", lambda view: "0xPayee")
+    return lambda view: chain(view) and repair_module._given_repair_deal(OLD, view.deal.deal_id)
+
+
+def test_given_unmarked_deal_needs_a_confirmation_defaulting_to_no(given, prompts):
+    with pytest.raises(click.Abort):
+        given(deal(11, "ACCEPTED", marker=None))
+    (text, default), = prompts
+    assert "no repair marker" in text and "0xPayee" in text and default is False
+
+
+def test_given_unmarked_deal_continues_once_confirmed(given, monkeypatch):
+    monkeypatch.setattr(repair_module.utils, "confirm", lambda text, **kwargs: True)
+    assert given(deal(11, "PROPOSED", marker=None)).deal.deal_id == 11
+
+
+def test_given_deal_marked_for_this_repair_needs_no_confirmation(given, prompts):
+    assert given(deal(11, "ACCEPTED")).deal.deal_id == 11
+    assert not prompts
+
+
+@pytest.mark.parametrize("view, message", [
+    (deal(11, "ACCEPTED", marker=12), "marked as the repair of deal ID 12"),
+    (deal(11, "ACCEPTED", provider_id="f01", marker=None), "own provider"),
+    (deal(11, "ACCEPTED", manifest_hash=b"\x02" * 32, marker=None), "another dataset"),
+    (deal(11, "REJECTED", marker=None), "state REJECTED"),
+])
+def test_given_deal_that_cannot_be_this_repair_is_refused(given, prompts, view, message):
+    with pytest.raises(click.ClickException, match=message):
+        given(view)
+    assert not prompts

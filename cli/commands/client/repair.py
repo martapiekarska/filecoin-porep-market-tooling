@@ -10,7 +10,7 @@ from cli.commands.client import _repair
 from cli.commands.client._client import client_address, client_signer
 from cli.commands.client.init_deal import init_deal
 from cli.commands.client.make_allocations import make_allocations
-from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, find_healthy_source
+from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, find_healthy_source, resolve_repair_payee
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
@@ -32,6 +32,9 @@ PENDING_DEAL_STATES = (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEP
               help="Duration of the new deal in months.  [default: DEAL_ID's duration]")
 @click.option("--wait-minutes", type=click.IntRange(min=0), default=10, show_default=True,
               help="How long to wait for the matched SP to accept a newly proposed deal before stopping; re-run to resume.")
+@click.option("--repair-deal", type=click.IntRange(min=1),
+              help="Continue this deal as the repair of DEAL_ID instead of looking for one marked as its repair, e.g. a repair "
+                   "deal proposed before repair deals were marked; asks for confirmation unless the deal is marked for DEAL_ID.")
 @click.option("--allow-unverified-history", is_flag=True, default=False,
               help="Deposit even if earlier deposits to the payee can't be checked (RPC log limits); only after checking them yourself.  "
                    "[default: false]")
@@ -45,6 +48,7 @@ def repair(ctx,
            price_per_tib_per_month: float | None = None,
            duration_months: int | None = None,
            wait_minutes: int = 10,
+           repair_deal: int | None = None,
            allow_unverified_history: bool = False,
            allow_repeat_deposit: bool = False):
     """
@@ -76,7 +80,7 @@ def repair(ctx,
     _repair.ensure_repairable(old_deal)
     ensure_usdfc(old_deal.payment.payment_token, f"Deal ID {deal_id}")
 
-    new_deal = _find_repair_deal(old_deal)
+    new_deal = _given_repair_deal(old_deal, repair_deal) if repair_deal else _find_repair_deal(old_deal)
     source = None
 
     if new_deal is not None and new_deal.deal.state == PoRepMarketDealState.ACTIVE:
@@ -93,7 +97,8 @@ def repair(ctx,
 
         new_deal = PoRepMarketViewHelper().get_deal_view(new_deal_id)
 
-    resume_command = f"`{sys.argv[0]} client repair {deal_id}" + (f" --source-url {source_url}" if source_url else "") + "`"
+    resume_command = f"`{sys.argv[0]} client repair {deal_id}" + (f" --source-url {source_url}" if source_url else "") + \
+                     (f" --repair-deal {repair_deal}" if repair_deal else "") + "`"
 
     if new_deal.deal.state == PoRepMarketDealState.PROPOSED:
         new_deal = _wait_for_acceptance(new_deal.deal.deal_id, wait_minutes)
@@ -169,6 +174,42 @@ def _find_repair_deal(old_deal: PoRepMarketDealView) -> PoRepMarketDealView | No
                       f"Propose a new repair deal anyway?", default=False, abort=True)
 
     return None
+
+
+# --repair-deal: the client names the repair deal. A deal marked as the repair of another deal is refused; an unmarked one
+# (proposed before repair deals were marked) is only taken after a confirmation that defaults to No, since nothing on-chain
+# links it to DEAL_ID and its SP's payee receives the non-refundable retrieval deposit.
+def _given_repair_deal(old_deal: PoRepMarketDealView, repair_deal_id: int) -> PoRepMarketDealView:
+    view = PoRepMarketViewHelper().get_deal_view(repair_deal_id)
+    old_deal_id = old_deal.deal.deal_id
+
+    if view.deal.client_address != client_address():
+        raise click.ClickException(f"Deal ID {repair_deal_id} client address {view.deal.client_address} "
+                                   f"does not match with connected client address {client_address()}.")
+
+    if repair_deal_id == old_deal_id or view.deal.provider_id == old_deal.deal.provider_id:
+        raise click.ClickException(f"Deal ID {repair_deal_id} is with deal ID {old_deal_id}'s own provider "
+                                   f"{old_deal.deal.provider_id}, so it can't repair it.")
+
+    if bytes(view.data.manifest_hash) != bytes(old_deal.data.manifest_hash):
+        raise click.ClickException(f"Deal ID {repair_deal_id} stores another dataset than deal ID {old_deal_id} (manifest hash differs).")
+
+    if view.deal.state not in PENDING_DEAL_STATES + (PoRepMarketDealState.ACTIVE,):
+        raise click.ClickException(f"Deal ID {repair_deal_id} is in state {view.deal.state}; run without --repair-deal to propose a new "
+                                   f"repair deal.")
+
+    marker = _repair.get_repair_marker(view.data.manifest_location)
+
+    if marker == old_deal_id:
+        return view
+
+    if marker is not None:
+        raise click.ClickException(f"Deal ID {repair_deal_id} is marked as the repair of deal ID {marker}, not {old_deal_id}.")
+
+    utils.confirm(f"\nDeal ID {repair_deal_id} ({view.deal.state}, provider {view.deal.provider_id}) has no repair marker, so nothing "
+                  f"on-chain links it to deal ID {old_deal_id}. Continue it as the repair of deal ID {old_deal_id}? Its SP's payee "
+                  f"{resolve_repair_payee(view)} receives the non-refundable retrieval deposit.", default=False, abort=True)
+    return view
 
 
 def _propose_repair_deal(old_deal: PoRepMarketDealView,
