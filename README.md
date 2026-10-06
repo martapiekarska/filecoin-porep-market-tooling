@@ -253,10 +253,14 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
    `client init-deal` and `client make-allocations`. The deposit can only be returned by the SP, so it is never made
    for a deal that is still only proposed.
 
-   The command is resumable: it finds its repair deal on-chain (same client and manifest, another SP, proposed after
-   the repaired deal and not yet ACTIVE) and continues from wherever it stopped, e.g. when the SP accepted after the
-   wait or a step failed, without proposing or depositing twice. Once a later deal for the dataset is ACTIVE it
-   reports the repair as done (`--propose-new` overrides, e.g. when that deal repaired another copy).
+   The command is resumable. The new deal's manifest URL carries a marker naming the repaired deal,
+   `<manifest URL>#fcss-repair-of=<repaired-deal-id>` (a URL fragment is never sent to the server, so the manifest
+   is fetched and hashed as usual). A re-run finds the deal marked for that repaired deal on-chain and continues from
+   wherever it stopped, e.g. when the SP accepted after the wait or a step failed, without proposing or depositing
+   twice; once that deal is ACTIVE it reports the repair as done. Other deals for the dataset, such as its surviving
+   original copy, are never taken for the repair deal. If unmarked deals for the dataset are still pending, the command
+   lists them and asks before proposing another one. A repair deal proposed before deals were marked is continued with
+   `--repair-deal <new-deal-id>`, after a confirmation.
 
    `--source-url` overrides the detected source, e.g. when no healthy SP is advertised on-chain.
    `client pay-repair-retrieval <new-deal-id> --repair-of <repaired-deal-id>` runs the deposit step on its own, e.g. to
