@@ -14,10 +14,14 @@ OLD = SimpleNamespace(deal=SimpleNamespace(deal_id=10, provider_id="f01", propos
                       data=SimpleNamespace(manifest_hash=HASH, manifest_location="https://m.example/manifest.json"))
 
 
-def deal(deal_id, state, provider_id="f02", proposed_at_epoch=2000, manifest_hash=HASH):
+MANIFEST = "https://m.example/manifest.json"
+
+
+def deal(deal_id, state, provider_id="f02", proposed_at_epoch=2000, manifest_hash=HASH, marker: int | None = 10):
+    location = MANIFEST if marker is None else f"{MANIFEST}#fcss-repair-of={marker}"
     return SimpleNamespace(deal=SimpleNamespace(deal_id=deal_id, state=PoRepMarketDealState[state], provider_id=provider_id,
                                                 proposed_at_epoch=proposed_at_epoch, client_address=CLIENT),
-                           data=SimpleNamespace(manifest_hash=manifest_hash))
+                           data=SimpleNamespace(manifest_hash=manifest_hash, manifest_location=location))
 
 
 @pytest.fixture
@@ -31,27 +35,69 @@ def chain(monkeypatch):
     return setup
 
 
-def test_resumes_the_latest_pending_repair_deal(chain):
+@pytest.fixture
+def prompts(monkeypatch):
+    asked = []
+
+    def fake_confirm(text, default=False, abort=False, **kwargs):
+        asked.append((text, default))
+        if abort:
+            raise click.Abort()
+        return False
+
+    monkeypatch.setattr(repair_module.utils, "confirm", fake_confirm)
+    return asked
+
+
+def test_marker_round_trip():
+    url = _repair.with_repair_marker(MANIFEST, 10)
+    assert url == f"{MANIFEST}#fcss-repair-of=10"
+    assert _repair.get_repair_marker(url) == 10
+    # repairing a repair deal: its marker is replaced, not stacked
+    assert _repair.get_repair_marker(_repair.with_repair_marker(url, 12)) == 12
+
+
+@pytest.mark.parametrize("location", [MANIFEST, f"{MANIFEST}#section", f"{MANIFEST}#fcss-repair-of=", f"{MANIFEST}#fcss-repair-of=1x",
+                                      f"{MANIFEST}#fcss-repair-of=10&x=1", f"{MANIFEST}?fcss-repair-of=10"])
+def test_only_a_well_formed_fragment_is_a_marker(location):
+    assert _repair.get_repair_marker(location) is None
+
+
+def test_marked_url_must_fit_the_market_limit():
+    with pytest.raises(click.ClickException, match="2048"):
+        _repair.with_repair_marker("https://m.example/" + "x" * 2020, 10)
+
+
+def test_resumes_the_latest_pending_deal_marked_for_this_repair(chain):
     chain(deal(11, "PROPOSED"), deal(12, "ACCEPTED"), deal(13, "REJECTED"))
-    assert repair_module._find_repair_deal(OLD, False).deal.deal_id == 12
+    assert repair_module._find_repair_deal(OLD).deal.deal_id == 12
+
+
+def test_marked_active_deal_means_the_repair_is_done(chain):
+    chain(deal(11, "ACTIVE"), deal(12, "PROPOSED"))
+    assert repair_module._find_repair_deal(OLD).deal.deal_id == 11
 
 
 @pytest.mark.parametrize("other", [
-    deal(11, "ACCEPTED", provider_id="f01"),          # the repaired deal's own SP
-    deal(11, "ACCEPTED", proposed_at_epoch=900),      # proposed before the repaired deal
+    deal(11, "ACTIVE", marker=None),                   # the dataset's surviving original copy, proposed after DEAL_ID
+    deal(11, "ACCEPTED", marker=12),                   # the repair of another deal of this dataset
+    deal(11, "ACCEPTED", provider_id="f01"),           # the repaired deal's own SP
     deal(11, "ACCEPTED", manifest_hash=b"\x02" * 32),  # another dataset
     deal(11, "REJECTED"),
 ])
-def test_ignores_deals_that_are_not_this_repair(chain, other):
+def test_ignores_deals_that_are_not_this_repair(chain, prompts, other):
     chain(other)
-    assert repair_module._find_repair_deal(OLD, False) is None
+    assert repair_module._find_repair_deal(OLD) is None
+    assert not prompts
 
 
-def test_active_later_deal_means_the_repair_is_done(chain):
-    chain(deal(11, "ACTIVE"))
-    with pytest.raises(click.ClickException, match="repair looks done"):
-        repair_module._find_repair_deal(OLD, False)
-    assert repair_module._find_repair_deal(OLD, True) is None
+def test_pending_unmarked_original_copy_is_never_picked(chain, prompts):
+    # the dataset's other original copy, still being onboarded: same client, same dataset, newer, pending
+    chain(deal(11, "ACCEPTED", marker=None))
+    with pytest.raises(click.Abort):
+        repair_module._find_repair_deal(OLD)
+    (text, default), = prompts
+    assert "--repair-deal" in text and default is False
 
 
 def test_old_terms_convert_back_exactly(monkeypatch):
@@ -76,7 +122,7 @@ def flow(monkeypatch, chain):
         monkeypatch.setattr(repair_module.SelfUpdateService, "check_and_prompt", lambda manual: None)
         monkeypatch.setattr(repair_module._repair, "ensure_repairable", lambda view: None)
         monkeypatch.setattr(repair_module, "ensure_usdfc", lambda token, subject: None)
-        monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old, propose_new: new)
+        monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old: new)
         monkeypatch.setattr(repair_module, "_wait_for_acceptance", lambda deal_id, minutes: deal(deal_id, new_state_after_wait))
         monkeypatch.setattr(repair_module._repair, "pay_repair_retrieval", lambda *args, **kwargs: steps.append(("pay", args[0], kwargs["covered_is_done"])))
         monkeypatch.setattr(repair_module.init_deal, "callback", lambda deal_id: steps.append(("init", deal_id)))
@@ -117,3 +163,50 @@ def test_resumed_deposit_already_covered_is_not_an_error(monkeypatch):
     assert _repair._check_previous_deposits("0xT", "0xP", 1, 5, 0, "USDFC", False, False, covered_is_done=True) == 0
     with pytest.raises(click.ClickException, match="not depositing again"):
         _repair._check_previous_deposits("0xT", "0xP", 1, 5, 0, "USDFC", False, False)
+
+
+def test_done_repair_is_reported_without_paying_again(flow, monkeypatch, capsys):
+    steps = flow("ACCEPTED")
+    monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old: deal(11, "ACTIVE"))
+    run_repair()
+    assert steps == []
+    assert "repair deal ID 11" in capsys.readouterr().out
+
+
+def test_new_repair_deal_is_proposed_with_the_marker(monkeypatch):
+    proposed = []
+    monkeypatch.setattr(repair_module.commands_utils, "fetch_manifest", lambda url, **kwargs: ([{"pieces": []}], b""))
+    monkeypatch.setattr(repair_module, "find_healthy_source",
+                        lambda *args: SimpleNamespace(base_url="https://healthy.example", quote=SimpleNamespace(total=0, paid_pieces=0)))
+    monkeypatch.setattr(repair_module, "client_signer", lambda: None)
+    monkeypatch.setattr(repair_module.commands_utils, "propose_deal", lambda signer, url, *args: proposed.append(url) or 11)
+    old = SimpleNamespace(deal=SimpleNamespace(deal_id=10, provider_id="f01", deal_type="PUBLIC"),
+                          data=SimpleNamespace(manifest_hash=HASH, manifest_location=MANIFEST),
+                          required_slis=SimpleNamespace(retrievability_bps=9000, bandwidth_bytes_per_second=125_000, latency_ms=0, indexing_pct=0),
+                          payment=SimpleNamespace(payment_token="0xUSDFC"))
+    assert repair_module._propose_repair_deal(old, None, 4.0, 6)[0] == 11
+    assert proposed == [f"{MANIFEST}#fcss-repair-of=10"]
+
+
+def _payable(monkeypatch, marker):
+    view = deal(11, "ACCEPTED", marker=marker)
+    monkeypatch.setattr(_repair, "client_address", lambda: CLIENT)
+    monkeypatch.setattr(_repair, "Web3Service", lambda: SimpleNamespace(wait_for_pending_transactions=lambda address: None))
+    monkeypatch.setattr(_repair, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_view=lambda deal_id: view))
+    checked = []
+    monkeypatch.setattr(_repair, "ensure_same_dataset", lambda deal_view, repair_of: checked.append(repair_of))
+    monkeypatch.setattr(_repair, "repair_payment_token", lambda deal_view: (_ for _ in ()).throw(click.ClickException("stop here")))
+    return checked
+
+
+def test_deposit_refuses_a_deal_marked_for_another_repair(monkeypatch):
+    _payable(monkeypatch, marker=12)
+    with pytest.raises(click.ClickException, match="marked as the repair of deal ID 12, not 10"):
+        _repair.pay_repair_retrieval(11, 10)
+
+
+def test_deposit_takes_the_repaired_deal_from_the_marker(monkeypatch):
+    checked = _payable(monkeypatch, marker=10)
+    with pytest.raises(click.ClickException, match="stop here"):
+        _repair.pay_repair_retrieval(11)
+    assert checked == [10]

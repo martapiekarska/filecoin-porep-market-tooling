@@ -32,9 +32,6 @@ PENDING_DEAL_STATES = (PoRepMarketDealState.PROPOSED, PoRepMarketDealState.ACCEP
               help="Duration of the new deal in months.  [default: DEAL_ID's duration]")
 @click.option("--wait-minutes", type=click.IntRange(min=0), default=10, show_default=True,
               help="How long to wait for the matched SP to accept a newly proposed deal before stopping; re-run to resume.")
-@click.option("--propose-new", is_flag=True, default=False,
-              help="Propose a new repair deal even though a deal for the same dataset proposed after DEAL_ID is already "
-                   "ACTIVE (e.g. it repaired a different deal of this dataset).  [default: false]")
 @click.option("--allow-unverified-history", is_flag=True, default=False,
               help="Deposit even if earlier deposits to the payee can't be checked (RPC log limits); only after checking them yourself.  "
                    "[default: false]")
@@ -48,7 +45,6 @@ def repair(ctx,
            price_per_tib_per_month: float | None = None,
            duration_months: int | None = None,
            wait_minutes: int = 10,
-           propose_new: bool = False,
            allow_unverified_history: bool = False,
            allow_repeat_deposit: bool = False):
     """
@@ -57,9 +53,10 @@ def repair(ctx,
     same command after any interruption and it continues from the state on-chain.
 
     \b
-    1. Find a repair deal already proposed for DEAL_ID's dataset (same client and manifest, a different SP,
-       proposed after DEAL_ID and still PROPOSED or ACCEPTED); if there is none, find a healthy SP and its exact
-       retrieval quote, then propose one with DEAL_ID's terms (the market matches the SP as for any other deal),
+    1. Find the repair deal of an earlier run: a deal marked on-chain as the repair of DEAL_ID (its manifest URL
+       ends in #fcss-repair-of=DEAL_ID) that is still PROPOSED or ACCEPTED, or ACTIVE (the repair is done); if
+       there is none, find a healthy SP and its exact retrieval quote, then propose a marked deal with DEAL_ID's
+       terms (the market matches the SP as for any other deal),
     2. wait up to --wait-minutes for the SP to accept it,
     3. deposit the one-off retrieval cost into the FileCoinPay account of the new SP's payee (as
        `client pay-repair-retrieval`; skipped when already deposited),
@@ -79,8 +76,13 @@ def repair(ctx,
     _repair.ensure_repairable(old_deal)
     ensure_usdfc(old_deal.payment.payment_token, f"Deal ID {deal_id}")
 
-    new_deal = _find_repair_deal(old_deal, propose_new)
+    new_deal = _find_repair_deal(old_deal)
     source = None
+
+    if new_deal is not None and new_deal.deal.state == PoRepMarketDealState.ACTIVE:
+        click.echo(f"\nRepair of deal ID {deal_id} is done: repair deal ID {new_deal.deal.deal_id} (provider "
+                   f"{new_deal.deal.provider_id}) is ACTIVE.")
+        return
 
     if new_deal is None:
         new_deal_id, source = _propose_repair_deal(old_deal, source_url, price_per_tib_per_month, duration_months)
@@ -116,16 +118,16 @@ def repair(ctx,
                f"with `sp onboard-data {new_deal.deal.deal_id}`.")
 
 
-# The CLI keeps no local state, so an earlier run's repair deal is found on-chain. Once a repair deal is ACTIVE there is nothing
-# left for the client to do, so an ACTIVE deal for the dataset proposed after DEAL_ID stops the command instead of proposing again.
-def _find_repair_deal(old_deal: PoRepMarketDealView, propose_new: bool) -> PoRepMarketDealView | None:
-    candidates = []
+# The CLI keeps no local state, so an earlier run's repair deal is found on-chain, by its repair marker (see _repair.REPAIR_MARKER):
+# the dataset's other original copy is newer than DEAL_ID as often as not, so recency and dataset alone can't identify it.
+# A marked ACTIVE deal means the repair is done. Unmarked pending deals for the dataset are never picked: they are listed, and
+# proposing another deal needs a confirmation (a repair proposed before repair deals were marked resumes with --repair-deal).
+def _find_repair_deal(old_deal: PoRepMarketDealView) -> PoRepMarketDealView | None:
+    marked = []
+    unmarked_pending = []
 
     for deal in commands_utils.get_client_deals(client_address()):
         if deal.deal_id == old_deal.deal.deal_id or deal.provider_id == old_deal.deal.provider_id:
-            continue
-
-        if deal.proposed_at_epoch <= old_deal.deal.proposed_at_epoch:
             continue
 
         if deal.state not in PENDING_DEAL_STATES + (PoRepMarketDealState.ACTIVE,):
@@ -133,27 +135,38 @@ def _find_repair_deal(old_deal: PoRepMarketDealView, propose_new: bool) -> PoRep
 
         view = PoRepMarketViewHelper().get_deal_view(deal.deal_id)
 
-        if bytes(view.data.manifest_hash) == bytes(old_deal.data.manifest_hash):
-            candidates.append(view)
+        if bytes(view.data.manifest_hash) != bytes(old_deal.data.manifest_hash):
+            continue
 
-    pending = [view for view in candidates if view.deal.state in PENDING_DEAL_STATES]
-    active = [view for view in candidates if view.deal.state == PoRepMarketDealState.ACTIVE]
+        marker = _repair.get_repair_marker(view.data.manifest_location)
+
+        if marker == old_deal.deal.deal_id:
+            marked.append(view)
+        elif marker is None and deal.state in PENDING_DEAL_STATES and deal.proposed_at_epoch > old_deal.deal.proposed_at_epoch:
+            unmarked_pending.append(view)
+
+    active = [view for view in marked if view.deal.state == PoRepMarketDealState.ACTIVE]
+    pending = [view for view in marked if view.deal.state in PENDING_DEAL_STATES]
+
+    if active:
+        return max(active, key=lambda view: view.deal.deal_id)
 
     if pending:
         new_deal = max(pending, key=lambda view: view.deal.deal_id)
 
         if len(pending) > 1:
-            click.echo(f"Several pending repair deals found ({', '.join(str(view.deal.deal_id) for view in pending)}); "
-                       f"continuing with the latest.")
+            click.echo(f"Several pending repair deals of deal ID {old_deal.deal.deal_id} found "
+                       f"({', '.join(str(view.deal.deal_id) for view in pending)}); continuing with the latest.")
 
         click.echo(f"Continuing repair deal ID {new_deal.deal.deal_id} ({new_deal.deal.state}, provider {new_deal.deal.provider_id}).")
         return new_deal
 
-    if active and not propose_new:
-        deals_str = ", ".join(f"{view.deal.deal_id} (provider {view.deal.provider_id})" for view in active)
-        raise click.ClickException(f"Deal(s) {deals_str} for the same dataset were proposed after deal ID {old_deal.deal.deal_id} and are "
-                                   f"ACTIVE, so the repair looks done. If they repaired another deal of this dataset, re-run with "
-                                   f"--propose-new.")
+    if unmarked_pending:
+        deals_str = ", ".join(f"{view.deal.deal_id} ({view.deal.state}, provider {view.deal.provider_id})" for view in unmarked_pending)
+        utils.confirm(f"\nDeal(s) {deals_str} for the same dataset are pending but not marked as the repair of deal ID "
+                      f"{old_deal.deal.deal_id}: they may be the dataset's other original copy, or a repair proposed before repair "
+                      f"deals were marked. To continue one of them as this repair, re-run with --repair-deal <deal-id>.\n"
+                      f"Propose a new repair deal anyway?", default=False, abort=True)
 
     return None
 
@@ -163,6 +176,7 @@ def _propose_repair_deal(old_deal: PoRepMarketDealView,
                          price_per_tib_per_month: float | None,
                          duration_months: int | None) -> tuple[int | None, RetrievalSource]:
     #
+    manifest_url = _repair.with_repair_marker(old_deal.data.manifest_location, old_deal.deal.deal_id)
     manifest, _ = commands_utils.fetch_manifest(old_deal.data.manifest_location, show_manifest=False, quiet=True, retries=10)
 
     # show the repair cost before the proposal is confirmed
@@ -173,7 +187,7 @@ def _propose_repair_deal(old_deal: PoRepMarketDealView,
     # propose_deal takes whole percent and Mbps: round up, so the new deal never asks for less than the old one
     slis = old_deal.required_slis
     deal_id = commands_utils.propose_deal(client_signer(),
-                                          old_deal.data.manifest_location,
+                                          manifest_url,
                                           -(-slis.retrievability_bps // 100),
                                           -(-slis.bandwidth_bytes_per_second // utils.Mbps_to_Bps(1)),
                                           price_per_tib_per_month or _old_price_per_tib(old_deal),

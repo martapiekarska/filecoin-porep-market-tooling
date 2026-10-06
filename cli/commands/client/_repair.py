@@ -1,3 +1,6 @@
+import re
+from urllib.parse import urldefrag
+
 import click
 
 from cli import utils
@@ -29,6 +32,31 @@ from cli.services.web3_service import EthAddress, Web3Service
 # once the SP has accepted the deal, and fails closed when earlier deposits can't be checked (see _check_previous_deposits).
 # The deposit is also the SP's go-signal: `sp onboard-data` only starts a paid download once the deposits the payee has
 # not yet spent cover the quote (see repair_funding).
+
+
+# A repair deal is linked to the deal it repairs by a marker in its on-chain manifest URL: `<manifest URL>#fcss-repair-of=<deal ID>`.
+# Nothing else in a deal can carry that link, and recency plus dataset can't tell a repair deal from the dataset's other original
+# copy. A URL fragment is never sent to the server, so the manifest is fetched (and hashed) exactly as without it.
+REPAIR_MARKER = "fcss-repair-of"
+MAX_MANIFEST_LOCATION_LENGTH = 2048  # PoRepMarket reverts longer locations with TooLongManifestLocation
+_REPAIR_MARKER_FRAGMENT = re.compile(rf"^{REPAIR_MARKER}=([1-9][0-9]*)$")
+
+
+def with_repair_marker(manifest_url: str, repaired_deal_id: int) -> str:
+    # an existing fragment (e.g. the marker of an earlier repair) is replaced: it never reaches the server
+    result = f"{urldefrag(manifest_url).url}#{REPAIR_MARKER}={repaired_deal_id}"
+
+    if len(result) > MAX_MANIFEST_LOCATION_LENGTH:
+        raise click.ClickException(f"Manifest URL with the repair marker is {len(result)} characters, over the market's "
+                                   f"{MAX_MANIFEST_LOCATION_LENGTH}; host the manifest at a shorter URL.")
+
+    return result
+
+
+# ID of the deal this deal repairs, or None for a deal without a (well-formed) repair marker
+def get_repair_marker(manifest_location: str) -> int | None:
+    match = _REPAIR_MARKER_FRAGMENT.match(urldefrag(manifest_location).fragment)
+    return int(match.group(1)) if match else None
 
 
 def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
@@ -131,6 +159,17 @@ def pay_repair_retrieval(deal_id: int,
 
     if deal.deal.state not in PAYABLE_DEAL_STATES:
         raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected ACCEPTED or ACTIVE")
+
+    # a repair deal names the deal it repairs: never pay for it as the repair of another one
+    marker = get_repair_marker(deal.data.manifest_location)
+
+    if marker is not None and repair_of_deal_id is not None and marker != repair_of_deal_id:
+        raise click.ClickException(f"Deal ID {deal_id} is marked as the repair of deal ID {marker}, not {repair_of_deal_id}; "
+                                   f"not paying its repair retrieval.")
+
+    if repair_of_deal_id is None and marker is not None:
+        click.echo(f"Deal ID {deal_id} is marked as the repair of deal ID {marker}.")
+        repair_of_deal_id = marker
 
     if repair_of_deal_id is not None:
         ensure_same_dataset(deal, repair_of_deal_id)
