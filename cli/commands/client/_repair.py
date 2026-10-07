@@ -118,14 +118,15 @@ def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: 
 def find_repair_source(deal: PoRepMarketDealView,
                        pieces: list[dict],
                        repair_of_deal_id: int | None = None,
-                       source_url: str | None = None) -> RetrievalSource:
+                       source_url: str | None = None,
+                       probe_fallback: bool = False) -> RetrievalSource:
     #
     exclude = {deal.deal.provider_id}
 
     if repair_of_deal_id is not None:
         exclude.add(PoRepMarketViewHelper().get_deal_view(repair_of_deal_id).deal.provider_id)
 
-    return find_healthy_source(deal.data.manifest_hash, pieces, exclude, source_url)
+    return find_healthy_source(deal.data.manifest_hash, pieces, exclude, source_url, probe_fallback)
 
 
 def ensure_repairable(deal: PoRepMarketDealView):
@@ -189,7 +190,8 @@ def pay_repair_retrieval(deal_id: int,
 
     # a source found before proposing is only reusable if the deal did not land with that same SP
     if source is None or source.provider_id == deal.deal.provider_id:
-        source = find_repair_source(deal, pieces, repair_of_deal_id, source_url)
+        # a legacy source is checked like in `client prepare-legacy-repair`: a free one needs no retrieval-client
+        source = find_repair_source(deal, pieces, repair_of_deal_id, source_url, probe_fallback=bool(embedded_source))
 
     if source.is_free():
         click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")

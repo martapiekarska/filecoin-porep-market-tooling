@@ -316,7 +316,10 @@ supplies the dataset's original manifest and the healthy source, and nothing is 
    toads.directory serves data-prep-standard super-manifests, which are converted to this CLI's manifest format: each
    piece's `fileSize` is its CAR size, `pieceSize` its minimal padded size, and the smallest piece is the DAG piece.
    The source is embedded in the manifest (`repairSource`), so the new SP knows where to fetch from. The command
-   checks the source serves the data at the expected sizes and shows the estimated retrieval cost.
+   checks the source serves every piece and shows its exact retrieval quote (`retrieval-client fetch --dry-run`).
+   Without `retrieval-client`, it requests one byte of each piece instead: that is enough for a source that serves the
+   data for free, while a paid one (`402`) needs `retrieval-client` installed. `propose-deal --repair-legacy` and
+   `pay-repair-retrieval` check the source the same way.
 
 2. **Client:** host the written manifest at any URL and propose the deal. The SP is matched like for any other deal, and
    the retrieval cost is paid into its payee account as for `client repair`:

@@ -88,7 +88,7 @@ def propose_deal(manifest_url: str,
             raise click.ClickException(f"Manifest at {manifest_url} has repair source {get_manifest_repair_source(manifest)!r}, "
                                        f"not {repair_source_url!r}; prepare it with `{sys.argv[0]} client prepare-legacy-repair`.")
 
-        source = find_healthy_source(b"", manifest[0]["pieces"], set(), repair_source_url)
+        source = find_healthy_source(b"", manifest[0]["pieces"], set(), repair_source_url, probe_fallback=True)
         _echo_repair_cost(source)
 
     elif repair_source_url is not None:

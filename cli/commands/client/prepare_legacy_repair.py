@@ -41,7 +41,7 @@ def prepare_legacy_repair(original_manifest: str, repair_source_url: str, output
     manifest, _ = commands_utils.fetch_local_manifest(_output_file)  # validate the result like any other manifest
     pieces = manifest[0]["pieces"]
 
-    source = find_healthy_source(b"", pieces, set(), repair_source_url)
+    source = find_healthy_source(b"", pieces, set(), repair_source_url, probe_fallback=True)
 
     cost_str = "0 (the source serves the data for free)" if source.is_free() else \
         f"{source.quote.total} USDFC for {source.quote.paid_pieces} paid piece(s)"

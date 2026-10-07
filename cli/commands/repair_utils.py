@@ -80,27 +80,42 @@ def ensure_secret_file(path: Path, description: str):
         raise click.ClickException(f"Refusing to use {description}: {problem}")
 
 
-def get_retrieval_client_path() -> str:
-    retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
+_RETRIEVAL_CLIENT_INSTALL_HINT = (
+    "Please install large-paid-retrievals retrieval-client: the repair flow uses it for quotes and downloads.\n"
+    "See https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers for installation instructions:\n"
+    "  git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals && "
+    "go build -o bin/retrieval-client ./cmd/retrieval-client\n"
+    "Set the RETRIEVAL_CLIENT_PATH environment variable if retrieval-client is installed but not in PATH.\n")
 
-    if retrieval_client_path != "retrieval-client":
-        retrieval_client_path = Path(retrieval_client_path).resolve()
+
+def _configured_retrieval_client() -> str:
+    retrieval_client_path = utils.get_env_required("RETRIEVAL_CLIENT_PATH", default="retrieval-client")
+    return retrieval_client_path if retrieval_client_path == "retrieval-client" else str(Path(retrieval_client_path).resolve())
+
+
+# path of a runnable retrieval-client, or None
+def find_retrieval_client() -> str | None:
+    retrieval_client_path = _configured_retrieval_client()
 
     # noinspection PyBroadException
     try:
         subprocess.run([retrieval_client_path, "fetch", "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
     # pylint: disable=broad-exception-caught
-    except Exception as e:
-        click.echo("retrieval-client not found. Please install large-paid-retrievals retrieval-client: the repair flow uses it for quotes and downloads.\n"
-                   "See https://github.com/fidlabs/large-paid-retrievals#for-dataset-consumers for installation instructions:\n"
-                   "  git clone https://github.com/fidlabs/large-paid-retrievals && cd large-paid-retrievals && "
-                   "go build -o bin/retrieval-client ./cmd/retrieval-client\n"
-                   "Set the RETRIEVAL_CLIENT_PATH environment variable if retrieval-client is installed but not in PATH.\n")
+    except Exception:
+        return None
 
-        raise click.ClickException(f"{retrieval_client_path} not found:\n{e}") from e
+    return retrieval_client_path
 
-    return str(retrieval_client_path)
+
+def get_retrieval_client_path() -> str:
+    retrieval_client_path = find_retrieval_client()
+
+    if retrieval_client_path is None:
+        click.echo(f"retrieval-client not found. {_RETRIEVAL_CLIENT_INSTALL_HINT}")
+        raise click.ClickException(f"{_configured_retrieval_client()} not found")
+
+    return retrieval_client_path
 
 
 class SourceUnavailable(Exception):
@@ -316,15 +331,42 @@ def probe_piece(base_url: str, piece_cid: str) -> PieceProbe:
         return PieceProbe(status="unavailable", detail=str(e))
 
 
-# exact quote for every piece at base_url, or None with the reason the source can't serve the dataset
-def quote_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | None, str]:
+# Without retrieval-client, a plain HTTP range request per piece still shows whether a source serves the whole dataset for
+# free (all 200/206). A paid source (402) needs retrieval-client's exact quote, so it stops with the install instructions.
+def probe_free_quote(base_url: str, pieces: list[dict]) -> RetrievalQuote:
+    for piece in pieces:
+        probe = probe_piece(base_url, piece["pieceCid"])
+
+        if probe.status == "paid":
+            click.echo(_RETRIEVAL_CLIENT_INSTALL_HINT)
+            raise click.ClickException(f"Source {base_url} charges for piece {piece['pieceCid']} (HTTP 402): its exact quote needs "
+                                       f"retrieval-client, which is not installed.")
+
+        if probe.status != "free":
+            raise SourceUnavailable(f"piece {piece['pieceCid']}: {probe.status} ({probe.detail})")
+
+        if probe.size_bytes is not None and piece.get("fileSize") and probe.size_bytes != piece["fileSize"]:
+            raise SourceUnavailable(f"piece {piece['pieceCid']}: size {probe.size_bytes} != manifest fileSize {piece['fileSize']}")
+
+    # noinspection PyArgumentList
+    return RetrievalQuote(total=Decimal(0), paid_pieces=0, free_pieces=len(pieces))
+
+
+# exact quote for every piece at base_url, or None with the reason the source can't serve the dataset;
+# probe_fallback: without retrieval-client, accept a source that serves every piece for free (see probe_free_quote)
+def quote_source(base_url: str, pieces: list[dict], probe_fallback: bool = False) -> tuple[RetrievalSource | None, str]:
     try:
         commands_utils.validate_and_parse_url(base_url)  # same private-address guard as for manifests: endpoints are advertised by SPs
     except (click.ClickException, OSError) as e:
         return None, str(e)
 
     try:
-        quote = quote_retrieval(base_url, [piece["pieceCid"] for piece in pieces])
+        if probe_fallback and find_retrieval_client() is None:
+            click.echo(f"retrieval-client not found; checking each of the {len(pieces)} piece(s) at {base_url} with a plain HTTP request "
+                       f"instead, which is enough for a free source.")
+            quote = probe_free_quote(base_url, pieces)
+        else:
+            quote = quote_retrieval(base_url, [piece["pieceCid"] for piece in pieces])
     except SourceUnavailable as e:
         return None, str(e)
 
@@ -334,10 +376,11 @@ def quote_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | N
 def find_healthy_source(manifest_hash: bytes,
                         pieces: list[dict],
                         exclude_provider_ids: set[ActorId],
-                        source_url: str | None = None) -> RetrievalSource:
+                        source_url: str | None = None,
+                        probe_fallback: bool = False) -> RetrievalSource:
     #
     if source_url:
-        source, reason = quote_source(source_url.rstrip("/"), pieces)
+        source, reason = quote_source(source_url.rstrip("/"), pieces, probe_fallback)
         if not source:
             raise click.ClickException(f"Source {source_url} is not serving the dataset: {reason}")
 
