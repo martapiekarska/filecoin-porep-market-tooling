@@ -16,9 +16,11 @@ from web3.types import RPCEndpoint
 
 from cli import utils
 from cli.commands import utils as commands_utils
+from cli.services.contracts.evidence_adapter import EvidenceType
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
 from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
 from cli.services.contracts.sp_registry import SPRegistry
+from cli.services.piece_set_commitment import PieceSet
 from cli.services.web3_service import ActorId, EthAddress, Web3Service
 
 # Shared code for the FCSS repair flow, used by the client commands and `sp onboard-data`:
@@ -26,9 +28,10 @@ from cli.services.web3_service import ActorId, EthAddress, Web3Service
 # - resolving the payee and token the repair retrieval is paid with (the same for client and SP),
 # - small helpers: child process environments, secret file checks.
 #
-# Healthy = another provider's deal for the same dataset (same manifest hash) that is ACTIVE, PUBLIC (LPR only lets
-# deal owners retrieve private deals) and has claims on-chain, AND whose advertised HTTP piece endpoint actually serves
-# every piece: checked, and priced, with `retrieval-client fetch --dry-run` (LPR's own quotes; free pieces cost nothing).
+# Healthy = another provider's deal for the same dataset (see dataset_hashes) that is ACTIVE, PUBLIC (LPR only lets
+# deal owners retrieve private deals) and has its data on-chain (claims for DataCap deals; an ACTIVE Sector deal had its
+# complete piece set placed), AND whose advertised HTTP piece endpoint actually serves every piece: checked, and priced,
+# with `retrieval-client fetch --dry-run` (LPR's own quotes; free pieces cost nothing).
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +332,33 @@ def quote_source(base_url: str, pieces: list[dict]) -> tuple[RetrievalSource | N
     return RetrievalSource(base_url=base_url, quote=quote), "ok"
 
 
-def find_healthy_source(manifest_hash: bytes,
+# A deal's manifest hash identifies its dataset differently per evidence adapter: Sector deals commit to the piece set,
+# DataCap deals hash the manifest file. A copy of the dataset under either adapter has one of these.
+def dataset_hashes(manifest: list[dict], raw_manifest: bytes) -> set[bytes]:
+    return {bytes(PieceSet(manifest[0]["pieces"]).commitment()), bytes(commands_utils.hash_manifest(raw_manifest))}
+
+
+# The manifest a deal's URL serves now, checked against what the deal committed to on-chain
+def fetch_deal_manifest(deal: PoRepMarketDealView) -> tuple[list[dict], set[bytes]]:
+    manifest, raw_manifest = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, quiet=True, retries=10)
+    hashes = dataset_hashes(manifest, raw_manifest)
+
+    if bytes(deal.data.manifest_hash) not in hashes:
+        raise click.ClickException(f"The manifest at deal ID {deal.deal.deal_id}'s URL {deal.data.manifest_location} no longer matches "
+                                   f"the deal's on-chain manifest hash.")
+
+    return manifest, hashes
+
+
+def _has_data_on_chain(deal) -> bool:
+    if commands_utils.get_evidence_type(deal.evidence_adapter_address) == EvidenceType.VERIF_REG_CLAIMS:
+        return bool(commands_utils.get_deal_claim_ids(deal))
+
+    # Sector placement: the market only activates a deal once its complete piece set is placed
+    return True
+
+
+def find_healthy_source(manifest_hashes: set[bytes],
                         pieces: list[dict],
                         exclude_provider_ids: set[ActorId],
                         source_url: str | None = None) -> RetrievalSource:
@@ -352,7 +381,7 @@ def find_healthy_source(manifest_hash: bytes,
                 or view.deal.provider_id in (c.deal.provider_id for c in candidates)):
             continue
 
-        if bytes(view.data.manifest_hash) == bytes(manifest_hash):
+        if bytes(view.data.manifest_hash) in manifest_hashes:
             candidates.append(view)
 
     sources = []
@@ -364,7 +393,7 @@ def find_healthy_source(manifest_hash: bytes,
             click.echo(f"{label}: skipped, {view.deal.deal_type} deal (LPR only serves private deals to their owner)")
             continue
 
-        if not commands_utils.get_deal_claim_ids(view.deal):
+        if not _has_data_on_chain(view.deal):
             click.echo(f"{label}: skipped, no claims on-chain")
             continue
 

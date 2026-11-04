@@ -9,8 +9,8 @@ from cli.commands import utils as commands_utils
 from cli.commands.client import _repair
 from cli.commands.client._client import client_address, client_signer
 from cli.commands.client.init_deal import init_deal
-from cli.commands.client.make_allocations import make_allocations
-from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, find_healthy_source, resolve_repair_payee
+from cli.commands.client.submit_ddo import submit_ddo
+from cli.commands.repair_utils import RetrievalSource, ensure_usdfc, fetch_deal_manifest, find_healthy_source, resolve_repair_payee
 from cli.services.contracts.erc20_contract import ERC20Contract
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
 from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
@@ -64,7 +64,8 @@ def repair(ctx,
     2. wait up to --wait-minutes for the SP to accept it,
     3. deposit the one-off retrieval cost into the FileCoinPay account of the new SP's payee (as
        `client pay-repair-retrieval`; skipped when already deposited),
-    4. initialize the deal and make its DDO allocations (as `client init-deal` and `client make-allocations`).
+    4. initialize the deal and submit its pieces to the new SP's Curio as offline DDO deals (as `client init-deal`
+       and `client submit-ddo`); the new SP then downloads the data with `sp onboard-data`.
 
     DEAL_ID - The deal being repaired (the SP that lost or no longer serves the data).
     """
@@ -80,7 +81,11 @@ def repair(ctx,
     _repair.ensure_repairable(old_deal)
     ensure_usdfc(old_deal.payment.payment_token, f"Deal ID {deal_id}")
 
-    new_deal = _given_repair_deal(old_deal, repair_deal) if repair_deal else _find_repair_deal(old_deal)
+    # the repair deal may use another evidence adapter than DEAL_ID, so copies are matched by either form of the manifest hash
+    manifest, dataset_hashes = fetch_deal_manifest(old_deal)
+
+    new_deal = (_given_repair_deal(old_deal, dataset_hashes, repair_deal) if repair_deal
+                else _find_repair_deal(old_deal, dataset_hashes))
     source = None
 
     if new_deal is not None and new_deal.deal.state == PoRepMarketDealState.ACTIVE:
@@ -89,7 +94,7 @@ def repair(ctx,
         return
 
     if new_deal is None:
-        new_deal_id, source = _propose_repair_deal(old_deal, source_url, price_per_tib_per_month, duration_months)
+        new_deal_id, source = _propose_repair_deal(old_deal, manifest, dataset_hashes, source_url, price_per_tib_per_month, duration_months)
 
         if new_deal_id is None:
             click.echo("\nNo deal created.")
@@ -117,7 +122,7 @@ def repair(ctx,
                                  covered_is_done=True)
 
     ctx.invoke(init_deal, deal_id=new_deal.deal.deal_id)
-    ctx.invoke(make_allocations, deal_id=new_deal.deal.deal_id)
+    ctx.invoke(submit_ddo, deal_id=new_deal.deal.deal_id)
 
     click.echo(f"\nRepair of deal ID {deal_id} set up as deal ID {new_deal.deal.deal_id}; the new SP now downloads the data "
                f"with `sp onboard-data {new_deal.deal.deal_id}`.")
@@ -127,7 +132,7 @@ def repair(ctx,
 # the dataset's other original copy is newer than DEAL_ID as often as not, so recency and dataset alone can't identify it.
 # A marked ACTIVE deal means the repair is done. Unmarked pending deals for the dataset are never picked: they are listed, and
 # proposing another deal needs a confirmation (a repair proposed before repair deals were marked resumes with --repair-deal).
-def _find_repair_deal(old_deal: PoRepMarketDealView) -> PoRepMarketDealView | None:
+def _find_repair_deal(old_deal: PoRepMarketDealView, dataset_hashes: set[bytes]) -> PoRepMarketDealView | None:
     marked = []
     unmarked_pending = []
 
@@ -140,7 +145,7 @@ def _find_repair_deal(old_deal: PoRepMarketDealView) -> PoRepMarketDealView | No
 
         view = PoRepMarketViewHelper().get_deal_view(deal.deal_id)
 
-        if bytes(view.data.manifest_hash) != bytes(old_deal.data.manifest_hash):
+        if bytes(view.data.manifest_hash) not in dataset_hashes:
             continue
 
         marker = _repair.get_repair_marker(view.data.manifest_location)
@@ -179,7 +184,7 @@ def _find_repair_deal(old_deal: PoRepMarketDealView) -> PoRepMarketDealView | No
 # --repair-deal: the client names the repair deal. A deal marked as the repair of another deal is refused; an unmarked one
 # (proposed before repair deals were marked) is only taken after a confirmation that defaults to No, since nothing on-chain
 # links it to DEAL_ID and its SP's payee receives the non-refundable retrieval deposit.
-def _given_repair_deal(old_deal: PoRepMarketDealView, repair_deal_id: int) -> PoRepMarketDealView:
+def _given_repair_deal(old_deal: PoRepMarketDealView, dataset_hashes: set[bytes], repair_deal_id: int) -> PoRepMarketDealView:
     view = PoRepMarketViewHelper().get_deal_view(repair_deal_id)
     old_deal_id = old_deal.deal.deal_id
 
@@ -191,7 +196,7 @@ def _given_repair_deal(old_deal: PoRepMarketDealView, repair_deal_id: int) -> Po
         raise click.ClickException(f"Deal ID {repair_deal_id} is with deal ID {old_deal_id}'s own provider "
                                    f"{old_deal.deal.provider_id}, so it can't repair it.")
 
-    if bytes(view.data.manifest_hash) != bytes(old_deal.data.manifest_hash):
+    if bytes(view.data.manifest_hash) not in dataset_hashes:
         raise click.ClickException(f"Deal ID {repair_deal_id} stores another dataset than deal ID {old_deal_id} (manifest hash differs).")
 
     if view.deal.state not in PENDING_DEAL_STATES + (PoRepMarketDealState.ACTIVE,):
@@ -213,15 +218,16 @@ def _given_repair_deal(old_deal: PoRepMarketDealView, repair_deal_id: int) -> Po
 
 
 def _propose_repair_deal(old_deal: PoRepMarketDealView,
+                         manifest: list[dict],
+                         dataset_hashes: set[bytes],
                          source_url: str | None,
                          price_per_tib_per_month: float | None,
                          duration_months: int | None) -> tuple[int | None, RetrievalSource]:
     #
     manifest_url = _repair.with_repair_marker(old_deal.data.manifest_location, old_deal.deal.deal_id)
-    manifest, _ = commands_utils.fetch_manifest(old_deal.data.manifest_location, show_manifest=False, quiet=True, retries=10)
 
     # show the repair cost before the proposal is confirmed
-    source = find_healthy_source(old_deal.data.manifest_hash, manifest[0]["pieces"], {old_deal.deal.provider_id}, source_url)
+    source = find_healthy_source(dataset_hashes, manifest[0]["pieces"], {old_deal.deal.provider_id}, source_url)
     click.echo(f"\nOne-off repair retrieval cost quoted by {source.base_url}, paid once the matched SP accepts the deal: "
                f"{source.quote.total} USDFC for {source.quote.paid_pieces} paid piece(s)")
 

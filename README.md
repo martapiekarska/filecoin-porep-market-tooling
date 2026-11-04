@@ -95,10 +95,10 @@ Anyone can check progress without a wallet with `migration-status`.
    must be this exported private key in 32-byte hex format with a `0x` prefix - **not** the wallet
    address you pass to `lotus wallet export`
 
-5. Alternatively, generate an auth token for your _controller address_ and use it instead of the private key:
+5. Alternatively, generate an auth token for your lotus wallet and use it instead of the private key:
 
     ```bash
-    lotus auth create-token --perm sign --wallet <your-controller-address>
+    lotus auth create-token --perm sign
     ```
 
    And set it as `SP_LOTUS_TOKEN` in your `.env` file alongside `SP_LOTUS_WALLET` with the address of your _controller wallet_. \
@@ -130,29 +130,9 @@ Anyone can check progress without a wallet with `migration-status`.
 
       ```bash
       python3 ./porep_tooling_cli.py sp onboard-data <deal-id> --output-dir <dir-to-download-to>
-      ``` 
-
-    - get the deal allocation IDs:
-
-      ```bash
-      python3 ./porep_tooling_cli.py sp get-allocations <deal-id>
-      ``` 
-
-    - and claim allocations for a deal:
-
-      ```bash
-      python3 ./porep_tooling_cli.py sp claim-allocations {curio|boost} <deal-id> 
       ```
 
-9. For deals using the `SECTOR_PLACEMENT` evidence adapter there are no allocations to claim. Instead, each deal piece must be sealed
-   with a FIP-0109 notification sent to the deal's evidence adapter, with `require_notification_success` set to `true`.
-   Get the notification address and payload for each piece with:
-
-   ```bash
-   python3 ./porep_tooling_cli.py sp get-piece-notifications <deal-id>
-   ```
-
-10. To get the full list of commands for the tooling:
+9. To get the full list of commands for the tooling:
 
     ```bash
     python3 ./porep_tooling_cli.py sp --help
@@ -197,37 +177,44 @@ Anyone can check progress without a wallet with `migration-status`.
      --deal-type <public|private>
    ```
 
-5. Initialize payment (validator, deposit, rail):
+5. Initialize FileCoinPay payment (validator, deposit, rail):
 
    ```bash
    python3 ./porep_tooling_cli.py client init-deal <deal-id>
    ```
 
-6. Make DataCap allocations:
+6. Submit DDO allocations:
 
    ```bash
-   python3 ./porep_tooling_cli.py client make-allocations <deal-id>
+   python3 ./porep_tooling_cli.py client submit-ddo <deal-id>
    ```
 
-   This step applies only to DataCap evidence deals. New deals use the PoRep Market global evidence adapter,
-   check it with `client info`. When it is `SECTOR_PLACEMENT`, `client propose-deal` commits to the manifest
-   piece set instead of hashing the manifest file, no DataCap allocations are needed and the Storage Provider proves
-   the data placement directly when sealing (see `sp get-piece-notifications`). Go straight to `client deposit-for-deals <deal-id>`.
+7. Deposit FileCoinPay funds for the deal:
 
-7. Optional - for a **private** deal, sign an EIP-712 retrieval voucher so a third-party wallet can retrieve the data (used
+    ```bash
+    python3 ./porep_tooling_cli.py client deposit-for-deals <deal-id>
+    ```
+
+8. Optional - for a **private** deal, sign an EIP-712 retrieval voucher so a third-party wallet can retrieve the data (used
    with [large-paid-retrievals](https://github.com/fidlabs/large-paid-retrievals)):
 
    ```bash
    python3 ./porep_tooling_cli.py client sign-retrieval-voucher \
-     --grantee <0x-third-party-wallet> \
-     --scope <DEAL_ID>
+           --grantee <0x-third-party-wallet> \
+           --scope <DEAL_ID>
    ```
 
    Prints a long-lived standalone `RetrievalVoucher` token (`grantee`, `scope`, `issuedAt`,
    `deadline`, embedded `signature`) for `Authorization: RetrievalVoucher`. \
-   Clients mint a per-piece `RetrievalProof` and send it as `Authorization: RetrievalProof` —
+   Clients mint a per-piece `RetrievalProof` and send it as `Authorization: RetrievalProof`;
    see [access-vouchers-eip712](https://github.com/fidlabs/large-paid-retrievals/blob/main/docs/access-vouchers-eip712.md). \
    `--deal-id` is accepted as an alias for `--scope`.
+
+9. To get the full list of commands for the tooling:
+
+    ```bash
+    python3 ./porep_tooling_cli.py client --help
+    ```
 
 ## FCSS repair flow (re-onboard a dataset from a healthy SP)
 
@@ -237,8 +224,11 @@ serving a copy), paying for that retrieval with [large-paid-retrievals](https://
 (LPR) where needed. The client pays for that one-off retrieval up front, so the new SP never fronts the cost. No keys
 are shared and the client, the new SP and the healthy SP don't need to exchange anything outside the CLI and the chain.
 
-**Finding the healthy SP:** the CLI looks for other providers' deals for the same dataset (same manifest hash) that are
-ACTIVE, PUBLIC and have claims on-chain. It then checks each provider's advertised HTTP piece endpoint (cid.contact,
+**Finding the healthy SP:** the CLI looks for other providers' deals for the same dataset that are ACTIVE, PUBLIC and
+have their data on-chain (claims for DataCap deals; a Sector deal only becomes ACTIVE once every piece is placed). A deal's
+manifest hash identifies its dataset differently per evidence adapter (Sector deals commit to the piece set, DataCap deals
+hash the manifest file), so a copy under either adapter counts, and the repair deal may use another adapter than the
+repaired deal. It then checks each provider's advertised HTTP piece endpoint (cid.contact,
 else the miner's on-chain multiaddrs, as LPR does, plus Curio's market address) actually serves every piece of the
 dataset, using `retrieval-client fetch --dry-run`.
 Free sources are preferred, then the cheapest. Both the client and the new SP do this on their own.
@@ -277,7 +267,7 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
    repaired deal's terms (`--price-per-tib-per-month` / `--duration-months` override them). The deal is matched to an
    SP **exactly like any other deal**: clients can't choose the SP. The command waits a few minutes
    (`--wait-minutes`) for that SP to accept, deposits the retrieval cost into its payee account, and runs
-   `client init-deal` and `client make-allocations`. The deposit can only be returned by the SP, so it is never made
+   `client init-deal` and `client submit-ddo`, which hands the pieces to the new SP's Curio as offline DDO deals. The deposit can only be returned by the SP, so it is never made
    for a deal that is still only proposed.
 
    The command is resumable. The new deal's manifest URL carries a marker naming the repaired deal,
@@ -315,7 +305,8 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
 
    By default (`--downloader auto`) `onboard-data` uses aria2 when the manifest host serves sample pieces for free, as
    for any regular deal, and otherwise retrieves the data through `retrieval-client` as a repair; `--downloader lpr`
-   forces the latter. The payee key is only needed when the source charges. The CLI finds the healthy SP itself
+   forces the latter. Either way each piece is saved as `<dir>/<piece CID v2>`, the name Curio knows it by, for the
+   offline DDO deals `client repair` submitted. The payee key is only needed when the source charges. The CLI finds the healthy SP itself
    (`--host` / `--port` override it), and checks that the key belongs to the deal's payee before downloading. If the
    client's deposits don't cover the quote yet, it stops with `Waiting for client funding: quote …, available …, short
    …` and the command the client runs to close the gap; run `onboard-data` again once it is funded. If the RPC can't
@@ -323,8 +314,7 @@ since the deal was proposed, cover that quote. Both sides read this from chain, 
    funds. `--allow-unfunded-retrieval` downloads anyway, paying any difference from the payee's own funds. The payee
    must be a regular `0x` wallet, not a contract, with a little FIL for Filecoin Pay gas. `retrieval-client` gets the
    CLI's `RPC_URL` and `FILECOIN_PAY`, so it spends from the same FileCoinPay account the client funded, in USDFC.
-   Works with `retrieval-client` built from LPR `main` or `v1-maintenance`. In `tools/sp-pipeline.sh`, set
-   `PAYEE_KEY_FILE`; deals still waiting for client funding are skipped and retried on the next run.
+   Works with `retrieval-client` built from LPR `main` or `v1-maintenance`.
 
 To have a specific SP store the repair copy, an admin proposes the deal with `admin propose-deal-for-offer`, and the
 client then runs `client pay-repair-retrieval`. Choosing an SP is an admin-only action.
@@ -337,7 +327,7 @@ Limitations:
   `retrieval-client` reads).
 - LPR currently lets only the deal owner retrieve **private** deals, so only **public** deals can be repaired. The
   `client sign-retrieval-voucher` integration depends on LPR's unmerged voucher-based access.
-- Health is judged from on-chain deal state, claims and a dry-run quote of every piece. The CLI does not check sector
+- Health is judged from on-chain deal state, evidence and a dry-run quote of every piece. The CLI does not check sector
   faults or proving status directly.
 - LPR has no price endpoint, so the price comes from a dry run that requests every piece. Each dry run makes the
   `sp-proxy` store an unpaid quote per piece, which it prunes after its retention period.

@@ -125,7 +125,7 @@ def lpr_download(monkeypatch, quote: RetrievalQuote, gate_error: Exception | Non
     monkeypatch.setattr(od, "_move_lpr_downloads", lambda pieces, output_dir: [])
 
     with click.Context(od.onboard_data) as ctx:
-        od._download_with_lpr(ctx, DEAL, PIECES, "https://healthy.example", None, True, "/sp/payee.key", None, True)
+        od._download_with_lpr(ctx, DEAL, PIECES, "https://healthy.example", None, True, "/sp/payee.key", True)
     return events
 
 

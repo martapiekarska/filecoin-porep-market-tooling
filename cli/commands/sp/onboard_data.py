@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 import humanfriendly
+from hexbytes import HexBytes
 
 from cli import utils
 from cli.commands import utils as commands_utils
@@ -17,6 +18,7 @@ from cli.commands.repair_utils import (
     SourceUnavailable,
     child_env,
     ensure_secret_file,
+    dataset_hashes,
     find_healthy_source,
     get_retrieval_client_path,
     probe_piece,
@@ -25,11 +27,14 @@ from cli.commands.repair_utils import (
     resolve_repair_payee,
     throwaway_key_file,
 )
-from cli.commands.sp.claim_allocations import claim_allocations as claim_allocations_command
+from cli.services.cid_converter import piece_cid_v1_to_v2
 from cli.services.contracts.erc20_contract import ERC20Contract
+from cli.services.contracts.evidence_adapter import EvidenceType
 from cli.services.contracts.filecoin_pay import FileCoinPay
 from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
-from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
+from cli.services.contracts.porep_market_view_helper import PoRepMarketDealView, PoRepMarketViewHelper
+from cli.services.contracts.sector_evidence_adapter import SectorEvidenceAdapter
+from cli.services.piece_set_commitment import PieceSet
 from cli.services.self_update import SelfUpdateService
 from cli.services.web3_service import EthAddress
 
@@ -65,15 +70,9 @@ def _echo_download_summary(pieces: list[dict], no_summary: bool):
                f"{utils.bytes_to_sectors(pieces_piecesize_bytes, PoRepMarket().get_sector_size_bytes())} sectors" + (":" if not no_summary else ""))
 
 
+# pieces are saved under their piece CID v2, the name Curio knows them by, whichever downloader fetched them
 def _resolve_piece_output_file(piece: dict, output_dir: Path) -> Path:
-    storage_path = piece["storagePath"]
-    output_file = (output_dir / storage_path).resolve()
-
-    # disallow path traversal outside of the output directory
-    if output_dir not in output_file.parents:
-        raise click.ClickException(f"Invalid manifest piece storagePath: {storage_path}")
-
-    return output_file
+    return (output_dir / piece_cid_v1_to_v2(piece["pieceCid"], piece["fileSize"])).resolve()
 
 
 def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir: Path, no_summary: bool) -> Path:
@@ -85,16 +84,14 @@ def _write_aria2c_input_file(pieces: list[dict], download_host: str, output_dir:
     with open(aria2_file, "w", encoding="utf-8") as f:
         for piece in pieces:
             output_file = _resolve_piece_output_file(piece, output_dir)
-            piece_name = piece["storagePath"].removesuffix(".car")
-
-            download_url = f"{download_host}/piece/{piece_name}"
+            download_url = f"{download_host}/piece/{piece['storagePath'].removesuffix('.car')}"
 
             f.write(f"{download_url}\n")
             f.write(f"  out={output_file.name}\n")
             f.write(f"  dir={output_file.parent}\n")
 
             if not no_summary:
-                click.echo(f"  {download_url} -> {output_file}")
+                click.echo(f"  {download_url} -> {output_file} ({humanfriendly.format_size(piece['fileSize'])})")
 
     if not no_summary:
         click.echo("(use --no-summary to skip this summary)")
@@ -124,7 +121,7 @@ def _write_lpr_cid_file(pieces: list[dict], download_host: str, output_dir: Path
     return cid_file.resolve()
 
 
-# retrieval-client always writes <pieceCid>.car into --out-dir; move each piece to its manifest storagePath
+# retrieval-client always writes <pieceCid>.car into --out-dir; move each piece to its piece CID v2 name
 def _move_lpr_downloads(pieces: list[dict], output_dir: Path) -> list[tuple[dict, Path]]:
     result = []
 
@@ -254,7 +251,6 @@ def _download_with_lpr(ctx,
                        output_dir: Path,
                        no_summary: bool,
                        payee_key_file: str | None,
-                       claim_allocations: str | None,
                        allow_unfunded_retrieval: bool = False):
     #
     retrieval_client_path = get_retrieval_client_path()
@@ -272,12 +268,7 @@ def _download_with_lpr(ctx,
 
         _run_retrieval_client(ctx, retrieval_client_path, pieces, download_host, output_dir, no_summary, key_file)
 
-    downloaded = _move_lpr_downloads(pieces, output_dir)
-
-    if claim_allocations:
-        for piece, output_file in downloaded:
-            ctx.invoke(claim_allocations_command, software=claim_allocations, deal_id=deal.deal.deal_id,
-                       cars_dir=str(output_file.parent), cid=piece["pieceCid"])
+    _move_lpr_downloads(pieces, output_dir)
 
 
 def _run_retrieval_client(ctx,
@@ -357,11 +348,9 @@ def _write_manifest_file(manifest: list[dict], output_dir: Path, deal_id: int) -
               help="Port to use for .car files download from --host or the manifest URL host; not used when the source "
                    "is auto-detected (lpr).")
 @click.option("--force", is_flag=True, default=False,
-              help="Force download even if all allocations are claimed.  [default: false]")
+              help="Force download even if all DDO pieces are placed.  [default: false]")
 @click.option("--no-summary", is_flag=True, default=False,
               help="Don't print the initial download summary.  [default: false]")
-@click.option("--claim-allocations", type=click.Choice(["curio", "boost"], case_sensitive=False),
-              help="Claim allocation(s) for each piece right after download using specified software.  [default: none]")
 @click.option("--downloader", type=click.Choice(["auto", "aria2", "lpr"], case_sensitive=False), default="auto", show_default=True,
               help="Downloader to use: aria2 for free HTTP piece servers, lpr for large-paid-retrievals retrieval-client, "
                    "which pays sp-proxy quotes, also handles free servers and can auto-detect a healthy SP (FCSS repair). "
@@ -381,7 +370,6 @@ def onboard_data(ctx,
                  host: str | None = None,
                  force: bool = False,
                  no_summary: bool = False,
-                 claim_allocations: str | None = None,
                  downloader: str = "auto",
                  payee_key_file: str | None = None,
                  allow_unfunded_retrieval: bool = False):
@@ -405,6 +393,9 @@ def onboard_data(ctx,
     The source is a healthy SP found automatically (another provider's ACTIVE, PUBLIC deal for the same
     dataset whose piece endpoint serves the data), or --host:--port if given.
 
+    \b
+    Either way each piece is saved as <output-dir>/<piece CID v2>, the name Curio knows it by.
+
     DEAL_ID - The ID of the deal to download pieces for.
 
     \b
@@ -422,32 +413,27 @@ def onboard_data(ctx,
 
     click.echo("Fetching deal details...")
     deal = PoRepMarketViewHelper().get_deal_view(deal_id)
+    manifest, raw_manifest = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
+    pieces = manifest[0]["pieces"]
 
-    if deal.deal.state not in (PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
-        raise click.ClickException(f"Deal ID {deal_id} is in state {deal.deal.state}, expected ACCEPTED or ACTIVE")
+    _validate_deal(deal, manifest)
 
-    deal_allocations = commands_utils.get_deal_allocations(deal.deal)
-    deal_claims = commands_utils.get_deal_claims(deal.deal)
-    allocations_not_claimed = {allocation_id: alloc for allocation_id, alloc in deal_allocations.items() if str(allocation_id) not in deal_claims}
-    cids_claimed = [claim.get("Data", {}).get("/") for claim in deal_claims.values()]
+    evidence_adapter = SectorEvidenceAdapter(deal.deal.evidence_adapter_address)
+    cids_done = {row.piece_cid for row in PieceSet(pieces).rows
+                 if evidence_adapter.is_piece_accepted(deal.deal.deal_id, row.index)}
 
-    if deal_claims and not allocations_not_claimed and not force:
-        click.echo(f"All {len(deal_claims)} allocations for deal ID {deal_id} are claimed; no need to download the data. Use --force to download anyway.")
+    if len(cids_done) == len(pieces) and not force:
+        click.echo(f"All {len(cids_done)} pieces of deal ID {deal_id} are placed; no need to download the data. Use --force to download anyway.")
         return
 
-    if not deal_claims and not allocations_not_claimed:
-        raise click.ClickException(f"No allocations found for deal ID {deal_id} but deal in {deal.deal.state} state.")
+    click.echo(f"Found {len(pieces) - len(cids_done)} pieces not placed and {len(cids_done)} placed for deal ID {deal_id}, "
+               f"{len(pieces)} total")
 
-    click.echo(f"Found {len(allocations_not_claimed)} allocations not claimed and {len(deal_claims)} claims for deal ID {deal_id}, "
-               f"{len(deal_allocations) + len(deal_claims)} total")
+    pieces_done = [piece for piece in pieces if piece["pieceCid"] in cids_done]
+    pieces_to_download = [piece for piece in pieces if piece not in pieces_done]
 
-    manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
-    pieces = manifest[0]["pieces"]
-    pieces_claimed = [piece for piece in pieces if piece["pieceCid"] in cids_claimed]
-    pieces_to_download = [piece for piece in pieces if piece not in pieces_claimed]
-
-    if pieces_claimed and not force:
-        click.echo(f"Skipping download of {len(pieces_claimed)} already claimed pieces. Use --force to download them anyway.")
+    if pieces_done and not force:
+        click.echo(f"Skipping download of {len(pieces_done)} already placed pieces. Use --force to download them anyway.")
 
     _output_dir = Path(output_dir).resolve()
     _output_dir.mkdir(parents=True, exist_ok=True)
@@ -464,10 +450,10 @@ def onboard_data(ctx,
 
     if downloader == "lpr":
         if not host:
-            download_host = find_healthy_source(deal.data.manifest_hash, pieces, {deal.deal.provider_id}).base_url
+            download_host = find_healthy_source(dataset_hashes(manifest, raw_manifest), pieces, {deal.deal.provider_id}).base_url
 
         _download_with_lpr(ctx, deal, pieces_to_download if not force else pieces, download_host, _output_dir,
-                           no_summary, payee_key_file, claim_allocations, allow_unfunded_retrieval)
+                           no_summary, payee_key_file, allow_unfunded_retrieval)
         return
 
     aria2c_path = _get_aria2c_path()
@@ -483,24 +469,29 @@ def onboard_data(ctx,
                    "--summary-interval=30",
                    "--console-log-level=warn"] + ctx.args
 
-        if claim_allocations:
-            callback_path = Path(sys.argv[0]).parent / "cli" / "commands" / "sp" / "_aria2_callback.py"
-            command += [f"--on-download-complete={callback_path}"]
-
-            env = {
-                **os.environ,
-                "ARIA2C_CLAIM_ALLOCATIONS_SOFTWARE": claim_allocations,
-                "ARIA2C_DEAL_ID": str(deal_id),
-            }
-        else:
-            env = None  # default argument
-
         utils.confirm(f"\nRunning command:\n  {' '.join(command)}\nContinue?", default=True, abort=True)
         click.echo("\n")
-        subprocess.run(command, check=True, env=env)
+        subprocess.run(command, check=True)
 
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"aria2c failed with exit code {e.returncode}") from e
 
     finally:
         aria2_file.unlink(missing_ok=True)
+
+
+def _validate_deal(deal: PoRepMarketDealView, manifest: list[dict]):
+    commands_utils.ensure_deal_evidence_type(deal.deal, EvidenceType.SECTOR_PLACEMENT)
+
+    if deal.deal.state not in (PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
+        raise click.ClickException(f"Deal ID {deal.deal.deal_id} is in state {deal.deal.state}, expected ACCEPTED or ACTIVE")
+
+    piece_set = PieceSet(manifest[0]["pieces"])
+
+    if piece_set.commitment() != deal.data.manifest_hash:
+        raise click.ClickException(f"Manifest piece-set commitment {piece_set.commitment().to_0x_hex()} does not match deal ID "
+                                   f"{deal.deal.deal_id} manifest hash {HexBytes(deal.data.manifest_hash).to_0x_hex()}")
+
+    if piece_set.size_bytes != deal.terms.requested_size_bytes:
+        raise click.ClickException(f"Manifest pieces size {piece_set.size_bytes} does not match deal ID {deal.deal.deal_id} "
+                                   f"requested size {deal.terms.requested_size_bytes}")

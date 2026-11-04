@@ -4,11 +4,11 @@ from urllib.parse import urldefrag
 import click
 
 from cli import utils
-from cli.commands import utils as commands_utils
 from cli.commands.client._client import client_address, client_signer
 from cli.commands.repair_funding import FundingHistoryUnavailable, base_units_str, get_repair_deposits, tokens_to_base_units
 from cli.commands.repair_utils import (
     RetrievalSource,
+    fetch_deal_manifest,
     find_healthy_source,
     repair_payment_token,
     resolve_repair_payee,
@@ -59,11 +59,12 @@ def get_repair_marker(manifest_location: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def ensure_same_dataset(deal: PoRepMarketDealView, repair_of_deal_id: int):
+# dataset_hashes: of DEAL's manifest (see repair_utils.dataset_hashes), so a repair under another evidence adapter still matches
+def ensure_same_dataset(deal: PoRepMarketDealView, dataset_hashes: set[bytes], repair_of_deal_id: int):
     repaired_deal = PoRepMarketViewHelper().get_deal_view(repair_of_deal_id)
 
-    if bytes(repaired_deal.data.manifest_hash) != bytes(deal.data.manifest_hash):
-        raise click.ClickException(f"Deal ID {deal.deal.deal_id} manifest hash does not match repaired deal ID {repair_of_deal_id}; "
+    if bytes(repaired_deal.data.manifest_hash) not in dataset_hashes:
+        raise click.ClickException(f"Deal ID {deal.deal.deal_id} manifest does not match repaired deal ID {repair_of_deal_id}'s manifest hash; "
                                    f"it is not a repair of the same dataset.")
 
 
@@ -116,6 +117,7 @@ def _check_previous_deposits(token: EthAddress, payee: EthAddress, since_block: 
 
 def find_repair_source(deal: PoRepMarketDealView,
                        pieces: list[dict],
+                       dataset_hashes: set[bytes],
                        repair_of_deal_id: int | None = None,
                        source_url: str | None = None) -> RetrievalSource:
     #
@@ -124,7 +126,7 @@ def find_repair_source(deal: PoRepMarketDealView,
     if repair_of_deal_id is not None:
         exclude.add(PoRepMarketViewHelper().get_deal_view(repair_of_deal_id).deal.provider_id)
 
-    return find_healthy_source(deal.data.manifest_hash, pieces, exclude, source_url)
+    return find_healthy_source(dataset_hashes, pieces, exclude, source_url)
 
 
 def ensure_repairable(deal: PoRepMarketDealView):
@@ -171,17 +173,17 @@ def pay_repair_retrieval(deal_id: int,
         click.echo(f"Deal ID {deal_id} is marked as the repair of deal ID {marker}.")
         repair_of_deal_id = marker
 
+    manifest, dataset_hashes = fetch_deal_manifest(deal)
+    pieces = manifest[0]["pieces"]
+
     if repair_of_deal_id is not None:
-        ensure_same_dataset(deal, repair_of_deal_id)
+        ensure_same_dataset(deal, dataset_hashes, repair_of_deal_id)
 
     token = ERC20Contract(repair_payment_token(deal))  # refuses non-USDFC deals before anything is probed or paid
 
-    manifest, _ = commands_utils.fetch_manifest(deal.data.manifest_location, show_manifest=False, retries=10)
-    pieces = manifest[0]["pieces"]
-
     # a source found before proposing is only reusable if the deal did not land with that same SP
     if source is None or source.provider_id == deal.deal.provider_id:
-        source = find_repair_source(deal, pieces, repair_of_deal_id, source_url)
+        source = find_repair_source(deal, pieces, dataset_hashes, repair_of_deal_id, source_url)
 
     if source.is_free():
         click.echo(f"\nHealthy source {source.base_url} serves the data for free; no repair retrieval payment needed.")

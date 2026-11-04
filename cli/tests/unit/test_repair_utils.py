@@ -7,6 +7,7 @@ import click
 import pytest
 
 from cli.commands import repair_utils
+from cli.services.contracts.evidence_adapter import EvidenceType
 from cli.services.contracts.porep_market import PoRepMarketDealState, PoRepMarketDealType
 
 GIB = 2 ** 30
@@ -64,9 +65,14 @@ def test_discover_falls_back_to_on_chain_multiaddrs(monkeypatch):
     assert repair_utils.discover_provider_http_bases(1234) == ["https://chain.example:443"]
 
 
-def _view(deal_id, provider, manifest_hash=b"h", state=PoRepMarketDealState.ACTIVE, deal_type=PoRepMarketDealType.PUBLIC):
-    return SimpleNamespace(deal=SimpleNamespace(deal_id=deal_id, provider_id=provider, state=state, deal_type=deal_type),
-                           data=SimpleNamespace(manifest_hash=manifest_hash))
+def _view(deal_id, provider, manifest_hash=b"h", state=PoRepMarketDealState.ACTIVE, deal_type=PoRepMarketDealType.PUBLIC, adapter="datacap"):
+    return SimpleNamespace(deal=SimpleNamespace(deal_id=deal_id, provider_id=provider, state=state, deal_type=deal_type,
+                                                evidence_adapter_address=adapter),
+                           data=SimpleNamespace(manifest_hash=manifest_hash, manifest_location="https://m.example/manifest.json"))
+
+
+def _evidence_type(adapter):
+    return EvidenceType.VERIF_REG_CLAIMS if adapter == "datacap" else EvidenceType.SECTOR_PLACEMENT
 
 
 def test_find_healthy_source_prefers_free_and_skips_unusable_deals(monkeypatch):
@@ -89,11 +95,12 @@ def test_find_healthy_source_prefers_free_and_skips_unusable_deals(monkeypatch):
         return None, "dataset incomplete: no usable source"
 
     monkeypatch.setattr(repair_utils, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_views=lambda: views))
+    monkeypatch.setattr(repair_utils.commands_utils, "get_evidence_type", _evidence_type)
     monkeypatch.setattr(repair_utils.commands_utils, "get_deal_claim_ids", lambda deal: [1])
     monkeypatch.setattr(repair_utils, "discover_provider_http_bases", lambda provider: [f"https://p{provider}"])
     monkeypatch.setattr(repair_utils, "quote_source", quote_source)
 
-    source = repair_utils.find_healthy_source(b"h", [], exclude_provider_ids={100})
+    source = repair_utils.find_healthy_source({b"h"}, [], exclude_provider_ids={100})
 
     assert (source.deal_id, source.provider_id, source.is_free()) == (6, 600, True)
     assert probed == ["https://p200", "https://p600", "https://p700"]
@@ -101,6 +108,29 @@ def test_find_healthy_source_prefers_free_and_skips_unusable_deals(monkeypatch):
 
 def test_find_healthy_source_fails_when_nothing_serves(monkeypatch):
     monkeypatch.setattr(repair_utils, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_views=lambda: [_view(1, 100)]))
+    monkeypatch.setattr(repair_utils.commands_utils, "get_evidence_type", _evidence_type)
     monkeypatch.setattr(repair_utils.commands_utils, "get_deal_claim_ids", lambda deal: [])  # no claims on-chain
     with pytest.raises(click.ClickException, match="No healthy SP"):
-        repair_utils.find_healthy_source(b"h", [], exclude_provider_ids=set())
+        repair_utils.find_healthy_source({b"h"}, [], exclude_provider_ids=set())
+
+
+def test_active_sector_copy_under_the_other_adapter_hash_is_healthy_without_claims(monkeypatch):
+    views = [_view(1, 100, manifest_hash=b"piece-set", adapter="sector")]
+    monkeypatch.setattr(repair_utils, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_views=lambda: views))
+    monkeypatch.setattr(repair_utils.commands_utils, "get_evidence_type", _evidence_type)
+    monkeypatch.setattr(repair_utils.commands_utils, "get_deal_claim_ids",
+                        lambda deal: (_ for _ in ()).throw(AssertionError("Sector deals have no claims")))
+    monkeypatch.setattr(repair_utils, "discover_provider_http_bases", lambda provider: [f"https://p{provider}"])
+    free = repair_utils.RetrievalQuote(total=Decimal(0), paid_pieces=0, free_pieces=1)
+    monkeypatch.setattr(repair_utils, "quote_source", lambda base_url, pieces: (repair_utils.RetrievalSource(base_url=base_url, quote=free), "ok"))
+
+    assert repair_utils.find_healthy_source({b"manifest-file", b"piece-set"}, [], exclude_provider_ids=set()).deal_id == 1
+
+
+def test_deal_manifest_must_still_match_the_on_chain_hash(monkeypatch):
+    monkeypatch.setattr(repair_utils.commands_utils, "fetch_manifest", lambda url, **kwargs: ([{"pieces": []}], b"{}"))
+    monkeypatch.setattr(repair_utils, "dataset_hashes", lambda manifest, raw: {b"piece-set", b"manifest-file"})
+
+    assert repair_utils.fetch_deal_manifest(_view(1, 100, manifest_hash=b"piece-set"))[1] == {b"piece-set", b"manifest-file"}
+    with pytest.raises(click.ClickException, match="no longer matches"):
+        repair_utils.fetch_deal_manifest(_view(1, 100, manifest_hash=b"changed"))

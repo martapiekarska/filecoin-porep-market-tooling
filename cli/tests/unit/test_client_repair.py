@@ -10,6 +10,8 @@ from cli.services.contracts.porep_market import PoRepMarketDealState
 repair_module = importlib.import_module("cli.commands.client.repair")
 
 CLIENT, HASH = "0xClient", b"\x01" * 32
+OTHER_ADAPTER_HASH = b"\x03" * 32  # the same dataset's manifest hash under the other evidence adapter
+HASHES = {HASH, OTHER_ADAPTER_HASH}
 OLD = SimpleNamespace(deal=SimpleNamespace(deal_id=10, provider_id="f01", proposed_at_epoch=1000, client_address=CLIENT),
                       data=SimpleNamespace(manifest_hash=HASH, manifest_location="https://m.example/manifest.json"))
 
@@ -70,12 +72,17 @@ def test_marked_url_must_fit_the_market_limit():
 
 def test_resumes_the_latest_pending_deal_marked_for_this_repair(chain):
     chain(deal(11, "PROPOSED"), deal(12, "ACCEPTED"), deal(13, "REJECTED"))
-    assert repair_module._find_repair_deal(OLD).deal.deal_id == 12
+    assert repair_module._find_repair_deal(OLD, HASHES).deal.deal_id == 12
 
 
 def test_marked_active_deal_means_the_repair_is_done(chain):
     chain(deal(11, "ACTIVE"), deal(12, "PROPOSED"))
-    assert repair_module._find_repair_deal(OLD).deal.deal_id == 11
+    assert repair_module._find_repair_deal(OLD, HASHES).deal.deal_id == 11
+
+
+def test_repair_deal_under_the_other_evidence_adapter_is_found(chain):
+    chain(deal(11, "ACCEPTED", manifest_hash=OTHER_ADAPTER_HASH))
+    assert repair_module._find_repair_deal(OLD, HASHES).deal.deal_id == 11
 
 
 @pytest.mark.parametrize("other", [
@@ -87,7 +94,7 @@ def test_marked_active_deal_means_the_repair_is_done(chain):
 ])
 def test_ignores_deals_that_are_not_this_repair(chain, prompts, other):
     chain(other)
-    assert repair_module._find_repair_deal(OLD) is None
+    assert repair_module._find_repair_deal(OLD, HASHES) is None
     assert not prompts
 
 
@@ -95,7 +102,7 @@ def test_pending_unmarked_original_copy_is_never_picked(chain, prompts):
     # the dataset's other original copy, still being onboarded: same client, same dataset, newer, pending
     chain(deal(11, "ACCEPTED", marker=None))
     with pytest.raises(click.Abort):
-        repair_module._find_repair_deal(OLD)
+        repair_module._find_repair_deal(OLD, HASHES)
     (text, default), = prompts
     assert "--repair-deal" in text and default is False
 
@@ -122,11 +129,12 @@ def flow(monkeypatch, chain):
         monkeypatch.setattr(repair_module.SelfUpdateService, "check_and_prompt", lambda manual: None)
         monkeypatch.setattr(repair_module._repair, "ensure_repairable", lambda view: None)
         monkeypatch.setattr(repair_module, "ensure_usdfc", lambda token, subject: None)
-        monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old: new)
+        monkeypatch.setattr(repair_module, "fetch_deal_manifest", lambda view: ([{"pieces": []}], HASHES))
+        monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old, hashes: new)
         monkeypatch.setattr(repair_module, "_wait_for_acceptance", lambda deal_id, minutes: deal(deal_id, new_state_after_wait))
         monkeypatch.setattr(repair_module._repair, "pay_repair_retrieval", lambda *args, **kwargs: steps.append(("pay", args[0], kwargs["covered_is_done"])))
         monkeypatch.setattr(repair_module.init_deal, "callback", lambda deal_id: steps.append(("init", deal_id)))
-        monkeypatch.setattr(repair_module.make_allocations, "callback", lambda deal_id, **kwargs: steps.append(("allocate", deal_id)))
+        monkeypatch.setattr(repair_module.submit_ddo, "callback", lambda deal_id, **kwargs: steps.append(("submit-ddo", deal_id)))
         OLD.payment = SimpleNamespace(payment_token="0xUSDFC")
         return steps
     return setup
@@ -137,10 +145,10 @@ def run_repair(**kwargs):
         ctx.invoke(repair_module.repair, deal_id=10, **kwargs)
 
 
-def test_accepted_repair_deal_is_funded_initialized_and_allocated(flow):
+def test_accepted_repair_deal_is_funded_initialized_and_submitted(flow):
     steps = flow("ACCEPTED")
     run_repair()
-    assert steps == [("pay", 11, True), ("init", 11), ("allocate", 11)]
+    assert steps == [("pay", 11, True), ("init", 11), ("submit-ddo", 11)]
 
 
 def test_unaccepted_repair_deal_stops_without_paying(flow, capsys):
@@ -167,7 +175,7 @@ def test_resumed_deposit_already_covered_is_not_an_error(monkeypatch):
 
 def test_done_repair_is_reported_without_paying_again(flow, monkeypatch, capsys):
     steps = flow("ACCEPTED")
-    monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old: deal(11, "ACTIVE"))
+    monkeypatch.setattr(repair_module, "_find_repair_deal", lambda old, hashes: deal(11, "ACTIVE"))
     run_repair()
     assert steps == []
     assert "repair deal ID 11" in capsys.readouterr().out
@@ -175,7 +183,6 @@ def test_done_repair_is_reported_without_paying_again(flow, monkeypatch, capsys)
 
 def test_new_repair_deal_is_proposed_with_the_marker(monkeypatch):
     proposed = []
-    monkeypatch.setattr(repair_module.commands_utils, "fetch_manifest", lambda url, **kwargs: ([{"pieces": []}], b""))
     monkeypatch.setattr(repair_module, "find_healthy_source",
                         lambda *args: SimpleNamespace(base_url="https://healthy.example", quote=SimpleNamespace(total=0, paid_pieces=0)))
     monkeypatch.setattr(repair_module, "client_signer", lambda: None)
@@ -184,7 +191,7 @@ def test_new_repair_deal_is_proposed_with_the_marker(monkeypatch):
                           data=SimpleNamespace(manifest_hash=HASH, manifest_location=MANIFEST),
                           required_slis=SimpleNamespace(retrievability_bps=9000, bandwidth_bytes_per_second=125_000, latency_ms=0, indexing_pct=0),
                           payment=SimpleNamespace(payment_token="0xUSDFC"))
-    assert repair_module._propose_repair_deal(old, None, 4.0, 6)[0] == 11
+    assert repair_module._propose_repair_deal(old, [{"pieces": []}], HASHES, None, 4.0, 6)[0] == 11
     assert proposed == [f"{MANIFEST}#fcss-repair-of=10"]
 
 
@@ -194,7 +201,8 @@ def _payable(monkeypatch, marker):
     monkeypatch.setattr(_repair, "Web3Service", lambda: SimpleNamespace(wait_for_pending_transactions=lambda address: None))
     monkeypatch.setattr(_repair, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_view=lambda deal_id: view))
     checked = []
-    monkeypatch.setattr(_repair, "ensure_same_dataset", lambda deal_view, repair_of: checked.append(repair_of))
+    monkeypatch.setattr(_repair, "fetch_deal_manifest", lambda deal_view: ([{"pieces": []}], HASHES))
+    monkeypatch.setattr(_repair, "ensure_same_dataset", lambda deal_view, hashes, repair_of: checked.append(repair_of))
     monkeypatch.setattr(_repair, "repair_payment_token", lambda deal_view: (_ for _ in ()).throw(click.ClickException("stop here")))
     return checked
 
@@ -215,7 +223,7 @@ def test_deposit_takes_the_repaired_deal_from_the_marker(monkeypatch):
 @pytest.fixture
 def given(chain, monkeypatch):
     monkeypatch.setattr(repair_module, "resolve_repair_payee", lambda view: "0xPayee")
-    return lambda view: chain(view) and repair_module._given_repair_deal(OLD, view.deal.deal_id)
+    return lambda view: chain(view) and repair_module._given_repair_deal(OLD, HASHES, view.deal.deal_id)
 
 
 def test_given_unmarked_deal_needs_a_confirmation_defaulting_to_no(given, prompts):
@@ -245,3 +253,11 @@ def test_given_deal_that_cannot_be_this_repair_is_refused(given, prompts, view, 
     with pytest.raises(click.ClickException, match=message):
         given(view)
     assert not prompts
+
+
+def test_repair_under_the_other_evidence_adapter_is_the_same_dataset(monkeypatch):
+    repaired = deal(10, "ACTIVE", manifest_hash=HASH, marker=None)
+    monkeypatch.setattr(_repair, "PoRepMarketViewHelper", lambda: SimpleNamespace(get_deal_view=lambda deal_id: repaired))
+    _repair.ensure_same_dataset(deal(11, "ACCEPTED", manifest_hash=OTHER_ADAPTER_HASH), HASHES, 10)
+    with pytest.raises(click.ClickException, match="not a repair of the same dataset"):
+        _repair.ensure_same_dataset(deal(11, "ACCEPTED", manifest_hash=OTHER_ADAPTER_HASH), {OTHER_ADAPTER_HASH}, 10)
