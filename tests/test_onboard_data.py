@@ -46,6 +46,8 @@ class OnboardDataEvidenceTypeTests(unittest.TestCase):
         patches = [
             patch.object(MODULE.SelfUpdateService, "check_and_prompt", lambda manual: None),
             patch.object(MODULE, "_get_aria2c_path", lambda: "aria2c"),
+            # --downloader auto: the client's piece server serves pieces for free, as for any regular deal, so aria2 is used
+            patch.object(MODULE, "probe_piece", lambda base_url, name: SimpleNamespace(status="free", detail=None)),
             patch.object(MODULE.subprocess, "run", side_effect=fake_run),
             patch.object(MODULE.utils, "confirm", lambda *args, **kwargs: True),
             patch.object(MODULE, "PoRepMarket", lambda: SimpleNamespace(get_sector_size_bytes=lambda: 34359738368)),
